@@ -91,4 +91,31 @@ public class DJDeckController {
             @RequestHeader("X-Host-Token") String hostToken) {
         return ResponseEntity.ok(playbackService.playSpecificDjTrack(roomCode, hostToken, trackId));
     }
+
+    @PostMapping("/import-youtube-playlist")
+    public ResponseEntity<List<EventDJTrackDto>> importYouTubePlaylist(
+            @PathVariable String roomCode,
+            @RequestHeader("X-Host-Token") String hostToken,
+            @RequestBody Map<String, Object> payload) {
+        String playlistUrlOrId = (String) payload.get("playlistUrl");
+        boolean replaceExisting = Boolean.TRUE.equals(payload.get("replaceExisting"));
+        return ResponseEntity.ok(djDeckService.importYouTubePlaylist(roomCode, hostToken, playlistUrlOrId, replaceExisting));
+    }
+
+    @PostMapping("/import-youtube-csv")
+    public ResponseEntity<List<EventDJTrackDto>> importYouTubeCsv(
+            @PathVariable String roomCode,
+            @RequestHeader("X-Host-Token") String hostToken,
+            @RequestBody Map<String, Object> payload) {
+        String csvContent = (String) payload.get("csvContent");
+        boolean replaceExisting = Boolean.TRUE.equals(payload.get("replaceExisting"));
+        return ResponseEntity.ok(djDeckService.importYouTubeCsv(roomCode, hostToken, csvContent, replaceExisting));
+    }
+
+    @GetMapping("/universal-search")
+    public ResponseEntity<com.owndj.dto.UniversalSearchResponseDto> universalSearch(
+            @PathVariable String roomCode,
+            @RequestParam(value = "q", defaultValue = "") String query) {
+        return ResponseEntity.ok(djDeckService.universalSearch(roomCode, query));
+    }
 }

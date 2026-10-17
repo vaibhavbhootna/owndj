@@ -22,5 +22,8 @@ public interface EventDJTrackRepository extends JpaRepository<EventDJTrack, UUID
 
     void deleteBySession(Session session);
 
+    @Query("SELECT t FROM EventDJTrack t WHERE t.session = :session AND (LOWER(t.title) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(t.artist) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(t.notes) LIKE LOWER(CONCAT('%', :query, '%')))")
+    List<EventDJTrack> searchDeckTracks(@Param("session") Session session, @Param("query") String query);
+
     int countBySession(Session session);
 }

@@ -2,7 +2,7 @@ export type SessionStatus = 'CREATED' | 'ACTIVE' | 'PAUSED' | 'ENDED';
 export type RequestStatus = 'PENDING' | 'APPROVED' | 'PLAYING' | 'PLAYED' | 'REJECTED' | 'FAILED';
 export type PlayerState = 'IDLE' | 'LOADING' | 'READY' | 'PLAYING' | 'PAUSED' | 'TRANSITIONING' | 'ENDED' | 'ERROR';
 export type SourceType = 'YOUTUBE' | 'LOCAL_MP3';
-export type ProjectionPreset = 'WELCOME' | 'NOW_PLAYING' | 'PARTY_VISUALS' | 'GUEST_REQUEST' | 'STANDBY';
+export type ProjectionPreset = 'WELCOME' | 'NOW_PLAYING' | 'PARTY_VISUALS' | 'GUEST_REQUEST' | 'STANDBY' | 'CUSTOM_SCREEN';
 
 export interface SessionSettings {
   defaultSongDurationSeconds: number; // 30, 45, 60, or 0 (full)
@@ -41,6 +41,13 @@ export interface Session {
   bannerText?: string;
   activeVisualPreset?: ProjectionPreset;
   tickerText?: string;
+  customScreenImageUrl?: string;
+  customScreenTitle?: string;
+  customScreenSubtitle?: string;
+  customScreenTag?: string;
+  customScreenLayout?: 'SPLIT' | 'BACKGROUND' | 'CENTER';
+  customScreenShowQr?: boolean;
+  customScreenShowNowPlaying?: boolean;
 
   // DJ Deck State
   currentDjTrackIndex?: number;
@@ -48,6 +55,17 @@ export interface Session {
   deckShuffle?: boolean;
   guestRequestsPaused?: boolean;
   requestCooldownSeconds?: number;
+}
+
+export interface ProjectorCustomScreen {
+  customScreenImageUrl?: string;
+  customScreenTitle?: string;
+  customScreenSubtitle?: string;
+  customScreenTag?: string;
+  customScreenLayout?: 'SPLIT' | 'BACKGROUND' | 'CENTER';
+  customScreenShowQr?: boolean;
+  customScreenShowNowPlaying?: boolean;
+  activateImmediately?: boolean;
 }
 
 export interface Guest {
@@ -222,4 +240,36 @@ export interface WebSocketEvent<T = any> {
   roomCode: string;
   payload: T;
   timestamp: string;
+}
+
+export interface LibraryTrackMatch {
+  trackId: string;
+  playlistId: string;
+  playlistName: string;
+  title: string;
+  artist: string;
+  album?: string;
+  sourceType: SourceType;
+  sourceIdentifier: string;
+  durationSeconds: number;
+  startSeconds: number;
+  notes?: string;
+}
+
+export interface UniversalSearchResponse {
+  query: string;
+  eventDeckMatches: EventDJTrack[];
+  librarySetMatches: LibraryTrackMatch[];
+  localMusicMatches: {
+    id: string;
+    title: string;
+    artist?: string;
+    channelTitle?: string;
+    durationSeconds: number;
+    youtubeVideoId?: string;
+    thumbnailUrl?: string;
+    albumArtUrl?: string;
+  }[];
+  youTubeMatches: SongSearchResult[];
+  totalMatches: number;
 }

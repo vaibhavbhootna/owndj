@@ -10,4 +10,5 @@ import java.util.UUID;
 @Repository
 public interface SongRepository extends JpaRepository<Song, UUID> {
     Optional<Song> findByYoutubeVideoId(String youtubeVideoId);
+    java.util.List<Song> findByTitleContainingIgnoreCaseOrChannelTitleContainingIgnoreCase(String title, String channelTitle);
 }

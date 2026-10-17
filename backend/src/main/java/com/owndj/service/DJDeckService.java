@@ -1,6 +1,10 @@
 package com.owndj.service;
 
 import com.owndj.dto.EventDJTrackDto;
+import com.owndj.dto.LibraryTrackMatchDto;
+import com.owndj.dto.SongDto;
+import com.owndj.dto.SongSearchResult;
+import com.owndj.dto.UniversalSearchResponseDto;
 import com.owndj.model.*;
 import com.owndj.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.BufferedReader;
+import java.io.StringReader;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -22,8 +28,10 @@ public class DJDeckService {
     private final EventDJTrackRepository eventDJTrackRepository;
     private final DJPlaylistRepository djPlaylistRepository;
     private final DJPlaylistTrackRepository djPlaylistTrackRepository;
+    private final SongRepository songRepository;
     private final SessionRepository sessionRepository;
     private final SessionService sessionService;
+    private final YouTubeService youTubeService;
     private final NotificationService notificationService;
 
     @Transactional(readOnly = true)
@@ -232,6 +240,221 @@ public class DJDeckService {
                 .sortOrder(track.getSortOrder())
                 .playbackStatus(track.getPlaybackStatus())
                 .createdAt(track.getCreatedAt())
+                .build();
+    }
+
+    @Transactional
+    public List<EventDJTrackDto> importYouTubePlaylist(String roomCode, String hostToken, String playlistUrlOrId, boolean replaceExisting) {
+        Session session = sessionService.findSessionByRoomCode(roomCode);
+        sessionService.validateHostToken(session, hostToken);
+
+        List<SongSearchResult> tracks = youTubeService.fetchPlaylistTracks(playlistUrlOrId);
+        if (tracks.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No tracks found in YouTube playlist");
+        }
+
+        if (replaceExisting) {
+            eventDJTrackRepository.deleteBySession(session);
+        }
+
+        int startSort = replaceExisting ? 0 : eventDJTrackRepository.countBySession(session);
+        List<EventDJTrack> deckTracks = new ArrayList<>();
+
+        for (int i = 0; i < tracks.size(); i++) {
+            SongSearchResult s = tracks.get(i);
+            deckTracks.add(EventDJTrack.builder()
+                    .session(session)
+                    .title(s.getTitle())
+                    .artist(s.getChannelTitle())
+                    .album("YouTube Playlist")
+                    .sourceType("YOUTUBE")
+                    .sourceIdentifier(s.getVideoId())
+                    .durationSeconds(s.getDurationSeconds() > 0 ? s.getDurationSeconds() : 210)
+                    .startSeconds(0)
+                    .transitionType("CROSSFADE")
+                    .transitionDurationSeconds(5)
+                    .playbackStatus("UNPLAYED")
+                    .sortOrder(startSort + i)
+                    .createdAt(Instant.now())
+                    .build());
+        }
+
+        eventDJTrackRepository.saveAll(deckTracks);
+        log.info("Imported {} YouTube playlist tracks into session {} deck", deckTracks.size(), roomCode);
+        broadcastDeckUpdate(roomCode);
+
+        return eventDJTrackRepository.findBySessionOrderBySortOrderAsc(session).stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public List<EventDJTrackDto> importYouTubeCsv(String roomCode, String hostToken, String csvContent, boolean replaceExisting) {
+        Session session = sessionService.findSessionByRoomCode(roomCode);
+        sessionService.validateHostToken(session, hostToken);
+
+        if (csvContent == null || csvContent.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CSV content is empty");
+        }
+
+        List<EventDJTrack> newTracks = new ArrayList<>();
+        int startSort = replaceExisting ? 0 : eventDJTrackRepository.countBySession(session);
+
+        try (BufferedReader reader = new BufferedReader(new StringReader(csvContent))) {
+            String line;
+            boolean isHeader = true;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+
+                // Check header
+                if (isHeader && (line.toLowerCase().contains("title") || line.toLowerCase().contains("url") || line.toLowerCase().contains("http"))) {
+                    if (line.toLowerCase().startsWith("http") || line.matches("^[a-zA-Z0-9_-]{11}$")) {
+                        isHeader = false;
+                    } else {
+                        isHeader = false;
+                        continue;
+                    }
+                }
+                isHeader = false;
+
+                String[] parts = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", -1);
+                String videoId = null;
+                String title = null;
+                String artist = "YouTube Artist";
+                int duration = 210;
+                int startSec = 0;
+
+                for (int pIdx = 0; pIdx < parts.length; pIdx++) {
+                    String clean = parts[pIdx].replaceAll("^\"|\"$", "").trim();
+                    String extracted = youTubeService.extractVideoId(clean);
+                    if (extracted != null) {
+                        videoId = extracted;
+                        if (pIdx > 0) {
+                            title = parts[0].replaceAll("^\"|\"$", "").trim();
+                            if (pIdx > 1) {
+                                artist = parts[1].replaceAll("^\"|\"$", "").trim();
+                            }
+                        } else if (parts.length > 1) {
+                            title = parts[1].replaceAll("^\"|\"$", "").trim();
+                        }
+                        break;
+                    }
+                }
+
+                if (videoId == null) continue;
+
+                if (title == null || title.isBlank() || title.equalsIgnoreCase(videoId)) {
+                    SongSearchResult details = youTubeService.fetchVideoDetails(videoId);
+                    if (details != null) {
+                        title = details.getTitle();
+                        artist = details.getChannelTitle();
+                        duration = details.getDurationSeconds();
+                    } else {
+                        title = "YouTube Track (" + videoId + ")";
+                    }
+                }
+
+                newTracks.add(EventDJTrack.builder()
+                        .session(session)
+                        .title(title)
+                        .artist(artist)
+                        .album("CSV Import")
+                        .sourceType("YOUTUBE")
+                        .sourceIdentifier(videoId)
+                        .durationSeconds(duration)
+                        .startSeconds(startSec)
+                        .transitionType("CROSSFADE")
+                        .transitionDurationSeconds(5)
+                        .playbackStatus("UNPLAYED")
+                        .sortOrder(startSort + newTracks.size())
+                        .createdAt(Instant.now())
+                        .build());
+            }
+        } catch (Exception e) {
+            log.error("Error parsing YouTube CSV: {}", e.getMessage());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to parse YouTube CSV: " + e.getMessage());
+        }
+
+        if (newTracks.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No valid YouTube URLs or video IDs found in CSV");
+        }
+
+        if (replaceExisting) {
+            eventDJTrackRepository.deleteBySession(session);
+        }
+
+        eventDJTrackRepository.saveAll(newTracks);
+        log.info("Imported {} YouTube tracks from CSV into session {} deck", newTracks.size(), roomCode);
+        broadcastDeckUpdate(roomCode);
+
+        return eventDJTrackRepository.findBySessionOrderBySortOrderAsc(session).stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public UniversalSearchResponseDto universalSearch(String roomCode, String query) {
+        if (query == null || query.isBlank()) {
+            return UniversalSearchResponseDto.builder().query("").totalMatches(0).build();
+        }
+        String q = query.trim();
+
+        // 1. Current Session Event DJ Deck matches
+        List<EventDJTrackDto> deckMatches = Collections.emptyList();
+        if (roomCode != null && !roomCode.isBlank()) {
+            try {
+                Session session = sessionService.findSessionByRoomCode(roomCode);
+                deckMatches = eventDJTrackRepository.searchDeckTracks(session, q).stream()
+                        .map(this::mapToDto)
+                        .collect(Collectors.toList());
+            } catch (Exception e) {
+                log.debug("Session not found or error searching deck: {}", e.getMessage());
+            }
+        }
+
+        // 2. Saved DJ Library Sets matches
+        List<LibraryTrackMatchDto> libraryMatches = djPlaylistTrackRepository.searchLibraryTracks(q).stream()
+                .map(t -> LibraryTrackMatchDto.builder()
+                        .trackId(t.getId())
+                        .playlistId(t.getPlaylist().getId())
+                        .playlistName(t.getPlaylist().getName())
+                        .title(t.getTitle())
+                        .artist(t.getArtist())
+                        .album(t.getAlbum())
+                        .sourceType(t.getSourceType())
+                        .sourceIdentifier(t.getSourceIdentifier())
+                        .durationSeconds(t.getDurationSeconds())
+                        .startSeconds(t.getStartSeconds())
+                        .notes(t.getNotes())
+                        .build())
+                .collect(Collectors.toList());
+
+        // 3. Local Music Library matches
+        List<SongDto> localMatches = songRepository.findByTitleContainingIgnoreCaseOrChannelTitleContainingIgnoreCase(q, q).stream()
+                .map(s -> SongDto.builder()
+                        .id(s.getId())
+                        .title(s.getTitle())
+                        .channelTitle(s.getChannelTitle())
+                        .durationSeconds(s.getDurationSeconds())
+                        .youtubeVideoId(s.getYoutubeVideoId())
+                        .thumbnailUrl(s.getThumbnailUrl())
+                        .embeddableStatus(s.getEmbeddableStatus())
+                        .build())
+                .collect(Collectors.toList());
+
+        // 4. YouTube matches
+        List<SongSearchResult> youtubeMatches = youTubeService.search(q);
+
+        int total = deckMatches.size() + libraryMatches.size() + localMatches.size() + youtubeMatches.size();
+
+        return UniversalSearchResponseDto.builder()
+                .query(q)
+                .eventDeckMatches(deckMatches)
+                .librarySetMatches(libraryMatches)
+                .localMusicMatches(localMatches)
+                .youTubeMatches(youtubeMatches)
+                .totalMatches(total)
                 .build();
     }
 }

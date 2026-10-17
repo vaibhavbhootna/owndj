@@ -331,15 +331,100 @@ public class YouTubeService {
         }
     }
 
-    private String extractVideoId(String input) {
+    public String extractVideoId(String input) {
+        if (input == null || input.isBlank()) return null;
+        input = input.trim();
         if (input.matches("^[a-zA-Z0-9_-]{11}$")) {
             return input;
         }
-        Pattern pattern = Pattern.compile("(?:v=|/)([a-zA-Z0-9_-]{11})");
+        Pattern pattern = Pattern.compile("(?:v=|/|embed/|youtu\\.be/)([a-zA-Z0-9_-]{11})");
         Matcher matcher = pattern.matcher(input);
         if (matcher.find()) {
             return matcher.group(1);
         }
         return null;
+    }
+
+    public String extractPlaylistId(String input) {
+        if (input == null || input.isBlank()) return null;
+        input = input.trim();
+        if (input.matches("^[a-zA-Z0-9_-]{10,64}$") && !input.startsWith("http")) {
+            return input;
+        }
+        Pattern pattern = Pattern.compile("[?&]list=([a-zA-Z0-9_-]+)");
+        Matcher matcher = pattern.matcher(input);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    public List<SongSearchResult> fetchPlaylistTracks(String playlistIdOrUrl) {
+        String playlistId = extractPlaylistId(playlistIdOrUrl);
+        if (playlistId == null || playlistId.isBlank()) {
+            throw new IllegalArgumentException("Invalid YouTube playlist URL or ID: " + playlistIdOrUrl);
+        }
+
+        if (apiKey == null || apiKey.isBlank()) {
+            log.info("YouTube API key empty, returning curated catalog for playlist simulation");
+            return CURATED_CATALOG;
+        }
+
+        try {
+            String url = UriComponentsBuilder.fromHttpUrl("https://www.googleapis.com/youtube/v3/playlistItems")
+                    .queryParam("part", "snippet,contentDetails")
+                    .queryParam("playlistId", playlistId)
+                    .queryParam("maxResults", 50)
+                    .queryParam("key", apiKey)
+                    .toUriString();
+
+            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            JsonNode root = objectMapper.readTree(response.getBody());
+            JsonNode items = root.path("items");
+
+            List<String> videoIds = new ArrayList<>();
+            Map<String, SongSearchResult.SongSearchResultBuilder> resultsMap = new LinkedHashMap<>();
+
+            for (JsonNode item : items) {
+                String videoId = item.path("contentDetails").path("videoId").asText();
+                if (videoId == null || videoId.isBlank() || videoId.equals("null")) {
+                    videoId = item.path("snippet").path("resourceId").path("videoId").asText();
+                }
+                if (videoId == null || videoId.isBlank()) continue;
+
+                JsonNode snippet = item.path("snippet");
+                String title = snippet.path("title").asText();
+                if ("Private video".equalsIgnoreCase(title) || "Deleted video".equalsIgnoreCase(title)) {
+                    continue;
+                }
+
+                String channelTitle = snippet.path("channelTitle").asText();
+                String thumb = snippet.path("thumbnails").path("medium").path("url").asText();
+                if (thumb.isBlank()) {
+                    thumb = "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
+                }
+
+                videoIds.add(videoId);
+                resultsMap.put(videoId, SongSearchResult.builder()
+                        .videoId(videoId)
+                        .title(title)
+                        .channelTitle(channelTitle)
+                        .thumbnailUrl(thumb)
+                        .durationSeconds(210)
+                        .embeddable(true));
+            }
+
+            if (!videoIds.isEmpty()) {
+                enrichVideoDetails(videoIds, resultsMap);
+            }
+
+            return resultsMap.values().stream()
+                    .map(SongSearchResult.SongSearchResultBuilder::build)
+                    .filter(SongSearchResult::isEmbeddable)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.error("Failed to fetch YouTube playlist {}: {}", playlistId, e.getMessage());
+            throw new RuntimeException("Failed to fetch YouTube playlist items: " + e.getMessage());
+        }
     }
 }

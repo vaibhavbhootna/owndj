@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { EventDJTrack, SongSearchResult } from '../../types';
 import { api } from '../../services/api';
+import { UniversalSearchModal } from './UniversalSearchModal';
+import { ImportPlaylistModal } from './ImportPlaylistModal';
 import {
   ListMusic,
   Plus,
@@ -21,6 +23,7 @@ import {
   Search,
   X,
   Volume2,
+  Youtube,
 } from 'lucide-react';
 
 interface DJDeckManagerProps {
@@ -41,6 +44,8 @@ export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
   currentTrackId,
 }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isUniversalSearchOpen, setIsUniversalSearchOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SongSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -202,6 +207,24 @@ export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
+          {/* Universal Search */}
+          <button
+            onClick={() => setIsUniversalSearchOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-purple-600/30 border border-purple-500/50 text-purple-200 font-bold text-xs flex items-center gap-1.5 hover:bg-purple-600 hover:text-white transition-all shadow-md"
+            title="Search across this Deck, DJ Library, Local MP3s, and YouTube"
+          >
+            <Search className="w-3.5 h-3.5 text-purple-300" /> Universal Search
+          </button>
+
+          {/* Import YouTube Playlist or CSV */}
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-dj-card border border-dj-border text-slate-300 font-semibold text-xs flex items-center gap-1.5 hover:border-red-500 hover:text-white transition-all"
+            title="Import YouTube Playlist or CSV with YouTube URLs"
+          >
+            <Youtube className="w-3.5 h-3.5 text-red-400" /> Import YouTube / CSV
+          </button>
+
           {/* Add Track */}
           <button
             onClick={() => setIsAddModalOpen(true)}
@@ -592,6 +615,24 @@ export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Universal Search Modal */}
+      <UniversalSearchModal
+        isOpen={isUniversalSearchOpen}
+        onClose={() => setIsUniversalSearchOpen(false)}
+        roomCode={roomCode}
+        hostToken={hostToken}
+        onDeckUpdated={onDeckUpdated}
+      />
+
+      {/* Import Playlist Modal */}
+      <ImportPlaylistModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        roomCode={roomCode}
+        hostToken={hostToken}
+        onDeckUpdated={onDeckUpdated}
+      />
     </div>
   );
 };

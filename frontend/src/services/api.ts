@@ -382,6 +382,50 @@ export const api = {
     return handleResponse<PlaybackState>(res);
   },
 
+  async importYouTubePlaylist(
+    roomCode: string,
+    hostToken: string,
+    playlistUrl: string,
+    replaceExisting?: boolean
+  ): Promise<import('../types').EventDJTrack[]> {
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/deck/import-youtube-playlist`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Host-Token': hostToken,
+      },
+      body: JSON.stringify({ playlistUrl, replaceExisting: !!replaceExisting }),
+    });
+    return handleResponse<import('../types').EventDJTrack[]>(res);
+  },
+
+  async importYouTubeCsv(
+    roomCode: string,
+    hostToken: string,
+    csvContent: string,
+    replaceExisting?: boolean
+  ): Promise<import('../types').EventDJTrack[]> {
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/deck/import-youtube-csv`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Host-Token': hostToken,
+      },
+      body: JSON.stringify({ csvContent, replaceExisting: !!replaceExisting }),
+    });
+    return handleResponse<import('../types').EventDJTrack[]>(res);
+  },
+
+  async universalSearch(
+    roomCode: string,
+    query: string
+  ): Promise<import('../types').UniversalSearchResponse> {
+    const res = await fetch(
+      `${API_BASE}/api/sessions/${roomCode.toUpperCase()}/deck/universal-search?q=${encodeURIComponent(query)}`
+    );
+    return handleResponse<import('../types').UniversalSearchResponse>(res);
+  },
+
   // ==========================================
   // DJ LIBRARY API (Reusable Sets)
   // ==========================================
@@ -551,5 +595,80 @@ export const api = {
       body: JSON.stringify({ announcement }),
     });
     if (!res.ok) throw new Error('Failed to broadcast projector announcement');
+  },
+
+  async createVisualTemplate(
+    template: Partial<import('../types').VisualTemplate>
+  ): Promise<import('../types').VisualTemplate> {
+    const res = await fetch(`${API_BASE}/api/projector/templates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(template),
+    });
+    return handleResponse<import('../types').VisualTemplate>(res);
+  },
+
+  async updateVisualTemplate(
+    id: string,
+    template: Partial<import('../types').VisualTemplate>
+  ): Promise<import('../types').VisualTemplate> {
+    const res = await fetch(`${API_BASE}/api/projector/templates/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(template),
+    });
+    return handleResponse<import('../types').VisualTemplate>(res);
+  },
+
+  async deleteVisualTemplate(id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/projector/templates/${id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete template');
+  },
+
+  async activateVisualTemplate(
+    roomCode: string,
+    hostToken: string,
+    templateId: string
+  ): Promise<void> {
+    const res = await fetch(
+      `${API_BASE}/api/sessions/${roomCode.toUpperCase()}/projector/activate-template/${templateId}`,
+      {
+        method: 'POST',
+        headers: { 'X-Host-Token': hostToken },
+      }
+    );
+    if (!res.ok) throw new Error('Failed to activate celebration moment');
+  },
+
+  async updateProjectorCustomScreen(
+    roomCode: string,
+    hostToken: string,
+    data: import('../types').ProjectorCustomScreen
+  ): Promise<void> {
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/projector/custom-screen`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Host-Token': hostToken,
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update projector custom screen');
+  },
+
+  async uploadVisualAsset(
+    file: File,
+    hostToken: string
+  ): Promise<{ storageKey: string; originalFilename: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/api/media/visuals`, {
+      method: 'POST',
+      headers: { 'X-Host-Token': hostToken },
+      body: formData,
+    });
+    return handleResponse<{ storageKey: string; originalFilename: string }>(res);
   },
 };
