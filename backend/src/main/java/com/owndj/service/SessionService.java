@@ -170,6 +170,13 @@ public class SessionService {
         if (dto.getBannerText() != null) session.setBannerText(dto.getBannerText());
         if (dto.getActiveVisualPreset() != null) session.setActiveVisualPreset(dto.getActiveVisualPreset());
         if (dto.getTickerText() != null) session.setTickerText(dto.getTickerText());
+        if (dto.getCustomScreenImageUrl() != null) session.setCustomScreenImageUrl(dto.getCustomScreenImageUrl());
+        if (dto.getCustomScreenTitle() != null) session.setCustomScreenTitle(dto.getCustomScreenTitle());
+        if (dto.getCustomScreenSubtitle() != null) session.setCustomScreenSubtitle(dto.getCustomScreenSubtitle());
+        if (dto.getCustomScreenTag() != null) session.setCustomScreenTag(dto.getCustomScreenTag());
+        if (dto.getCustomScreenLayout() != null) session.setCustomScreenLayout(dto.getCustomScreenLayout());
+        if (dto.getCustomScreenShowQr() != null) session.setCustomScreenShowQr(dto.getCustomScreenShowQr());
+        if (dto.getCustomScreenShowNowPlaying() != null) session.setCustomScreenShowNowPlaying(dto.getCustomScreenShowNowPlaying());
         if (dto.getDeckRepeat() != null) session.setDeckRepeat(dto.getDeckRepeat());
         if (dto.getDeckShuffle() != null) session.setDeckShuffle(dto.getDeckShuffle());
         if (dto.getGuestRequestsPaused() != null) session.setGuestRequestsPaused(dto.getGuestRequestsPaused());
@@ -205,6 +212,13 @@ public class SessionService {
                 .bannerText(session.getBannerText())
                 .activeVisualPreset(session.getActiveVisualPreset())
                 .tickerText(session.getTickerText())
+                .customScreenImageUrl(session.getCustomScreenImageUrl())
+                .customScreenTitle(session.getCustomScreenTitle())
+                .customScreenSubtitle(session.getCustomScreenSubtitle())
+                .customScreenTag(session.getCustomScreenTag())
+                .customScreenLayout(session.getCustomScreenLayout() != null ? session.getCustomScreenLayout() : "SPLIT")
+                .customScreenShowQr(session.getCustomScreenShowQr() != null ? session.getCustomScreenShowQr() : true)
+                .customScreenShowNowPlaying(session.getCustomScreenShowNowPlaying() != null ? session.getCustomScreenShowNowPlaying() : true)
                 .currentDjTrackIndex(session.getCurrentDjTrackIndex() != null ? session.getCurrentDjTrackIndex() : 0)
                 .deckRepeat(session.getDeckRepeat() != null ? session.getDeckRepeat() : true)
                 .deckShuffle(session.getDeckShuffle() != null ? session.getDeckShuffle() : false)

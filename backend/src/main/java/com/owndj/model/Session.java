@@ -85,6 +85,34 @@ public class Session {
     @Builder.Default
     private String tickerText = "Scan the QR code to request songs!";
 
+    // Custom Projector Screen Configuration
+    @Column(name = "custom_screen_image_url", columnDefinition = "TEXT")
+    private String customScreenImageUrl;
+
+    @Column(name = "custom_screen_title", length = 255)
+    @Builder.Default
+    private String customScreenTitle = "Celebrating Tonight!";
+
+    @Column(name = "custom_screen_subtitle", columnDefinition = "TEXT")
+    @Builder.Default
+    private String customScreenSubtitle = "Wishing you a night full of music, memories, and celebration.";
+
+    @Column(name = "custom_screen_tag", length = 64)
+    @Builder.Default
+    private String customScreenTag = "SPECIAL CELEBRATION";
+
+    @Column(name = "custom_screen_layout", length = 32)
+    @Builder.Default
+    private String customScreenLayout = "SPLIT";
+
+    @Column(name = "custom_screen_show_qr")
+    @Builder.Default
+    private Boolean customScreenShowQr = true;
+
+    @Column(name = "custom_screen_show_now_playing")
+    @Builder.Default
+    private Boolean customScreenShowNowPlaying = true;
+
     // DJ Deck State & Playback Rules
     @Column(name = "current_dj_track_index")
     @Builder.Default

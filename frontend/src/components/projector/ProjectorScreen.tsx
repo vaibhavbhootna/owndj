@@ -62,6 +62,23 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
     const unsubPreset = wsService.subscribe('VISUAL_PRESET_CHANGED', (event) => {
       if (event.payload.preset) setActivePreset(event.payload.preset);
       if (event.payload.tickerText) setTickerMessage(event.payload.tickerText);
+      setSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          activeVisualPreset: event.payload.preset || prev.activeVisualPreset,
+          tickerText: event.payload.tickerText ?? prev.tickerText,
+          bannerText: event.payload.bannerText ?? prev.bannerText,
+          themeColor: event.payload.themeColor || prev.themeColor,
+          customScreenTitle: event.payload.customScreenTitle ?? prev.customScreenTitle,
+          customScreenSubtitle: event.payload.customScreenSubtitle ?? prev.customScreenSubtitle,
+          customScreenImageUrl: event.payload.customScreenImageUrl ?? prev.customScreenImageUrl,
+          customScreenTag: event.payload.customScreenTag ?? prev.customScreenTag,
+          customScreenLayout: event.payload.customScreenLayout ?? prev.customScreenLayout,
+          customScreenShowQr: event.payload.customScreenShowQr ?? prev.customScreenShowQr,
+          customScreenShowNowPlaying: event.payload.customScreenShowNowPlaying ?? prev.customScreenShowNowPlaying,
+        };
+      });
     });
 
     const unsubAnnouncement = wsService.subscribe('PROJECTION_ANNOUNCEMENT', (event) => {
@@ -332,6 +349,140 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
             {qrDataUrl && (
               <div className="bg-white p-3 rounded-2xl shadow-2xl">
                 <img src={qrDataUrl} alt="QR" className="w-48 h-48" />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* PRESET 6: CUSTOM CELEBRATION MOMENT (Cake Cutting, Ring Ceremony, Wedding, etc.) */}
+        {activePreset === 'CUSTOM_SCREEN' && (
+          <div className="w-full h-full flex items-center justify-center animate-fade-in relative z-10 py-4">
+            {/* Background Custom Image Backdrop (with gentle ambient dark overlay) */}
+            {session?.customScreenImageUrl && (
+              <div className="absolute -inset-16 pointer-events-none overflow-hidden z-0">
+                <img
+                  src={session.customScreenImageUrl}
+                  alt="Celebration Background"
+                  className="w-full h-full object-cover filter blur-[2px] brightness-[0.25] scale-105 transition-all duration-1000"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#05050c] via-black/40 to-[#05050c]/70" />
+              </div>
+            )}
+
+            {/* Layout Mode 1: SPLIT (Side-by-side with hero photo) */}
+            {(!session?.customScreenLayout || session.customScreenLayout === 'SPLIT') && (
+              <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-12 w-full max-w-6xl mx-auto px-4">
+                {/* Left: Custom Hero Image / Photo */}
+                <div className="flex-1 max-w-lg w-full flex items-center justify-center">
+                  <div className="relative group rounded-3xl p-1.5 bg-gradient-to-tr from-dj-cyan via-pink-500 to-amber-400 shadow-2xl glow-cyan w-full">
+                    {session?.customScreenImageUrl ? (
+                      <img
+                        src={session.customScreenImageUrl}
+                        alt="Celebration Visual"
+                        className="w-full h-72 md:h-96 object-cover rounded-2xl shadow-2xl"
+                      />
+                    ) : (
+                      <div className="w-full h-72 md:h-96 rounded-2xl bg-slate-900/90 flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                        <Sparkles className="w-16 h-16 text-yellow-400 mb-3 animate-spin" />
+                        <span className="text-white font-bold text-lg">Custom Celebration Visual</span>
+                        <span className="text-xs text-slate-400 mt-1">Upload an image or pick a celebration moment</span>
+                      </div>
+                    )}
+                    {/* Floating Celebration Badge */}
+                    <div className="absolute -bottom-3 -right-3 px-4 py-1.5 rounded-full bg-dj-magenta text-black font-black text-xs uppercase shadow-xl tracking-wider flex items-center gap-1.5 glow-magenta">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      {session?.customScreenTag || 'CELEBRATION MOMENT'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Headlines, Subtitle, & Live Request QR */}
+                <div className="flex-1 space-y-6 text-left">
+                  <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/20 backdrop-blur-md text-amber-300 font-mono text-xs font-bold uppercase tracking-widest shadow-md">
+                    <span>✨</span>
+                    <span>{session?.customScreenTag || 'SPECIAL MOMENT'}</span>
+                  </div>
+
+                  <h1 className="text-5xl md:text-6xl font-black text-white leading-tight tracking-tight drop-shadow-2xl">
+                    {session?.customScreenTitle || 'Time for Celebration! 🎂'}
+                  </h1>
+
+                  <p className="text-xl md:text-2xl text-slate-200 font-medium leading-relaxed drop-shadow-md">
+                    {session?.customScreenSubtitle || 'Join in the celebration and make unforgettable memories together!'}
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-4 pt-2">
+                    {session?.customScreenShowQr !== false && qrDataUrl && (
+                      <div className="flex items-center gap-3 bg-black/60 p-3 rounded-2xl border border-white/20 backdrop-blur-md shadow-xl">
+                        <img src={qrDataUrl} alt="QR" className="w-16 h-16 rounded-xl bg-white p-1" />
+                        <div>
+                          <span className="text-[10px] font-mono uppercase text-dj-cyan font-bold block">
+                            Live Requests
+                          </span>
+                          <span className="text-xs font-extrabold text-white">Scan to Request Songs</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {session?.customScreenShowNowPlaying !== false && track && (
+                      <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-black/60 border border-white/20 backdrop-blur-md shadow-xl">
+                        <Volume2 className="w-4 h-4 text-dj-cyan animate-pulse" />
+                        <div className="text-left">
+                          <span className="text-[10px] font-mono uppercase text-slate-400 block">Playing Now</span>
+                          <span className="text-xs font-bold text-white truncate max-w-[200px] block">{track.song.title}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Layout Mode 2: BACKGROUND (Full-bleed hero backdrop with centered card) */}
+            {session?.customScreenLayout === 'BACKGROUND' && (
+              <div className="relative z-10 flex flex-col items-center justify-center text-center max-w-4xl mx-auto p-10 rounded-3xl bg-black/65 border-2 border-white/20 backdrop-blur-xl shadow-2xl space-y-6">
+                <span className="px-5 py-2 rounded-full text-xs font-mono font-bold uppercase tracking-widest bg-gradient-to-r from-amber-400 to-pink-500 text-black shadow-lg">
+                  ✨ {session?.customScreenTag || 'CELEBRATION'} ✨
+                </span>
+                <h1 className="text-5xl md:text-7xl font-black text-white leading-tight">
+                  {session?.customScreenTitle || 'Celebrating Together'}
+                </h1>
+                <p className="text-2xl text-slate-200 max-w-2xl leading-relaxed">
+                  {session?.customScreenSubtitle || 'Dance, cheer, and celebrate this memorable occasion!'}
+                </p>
+                {session?.customScreenShowQr !== false && qrDataUrl && (
+                  <div className="pt-2 flex items-center justify-center gap-3">
+                    <img src={qrDataUrl} alt="QR" className="w-20 h-20 rounded-2xl bg-white p-1.5 shadow-xl" />
+                    <div className="text-left">
+                      <span className="text-xs font-mono uppercase text-dj-cyan font-bold block">Keep the party going</span>
+                      <span className="text-sm font-bold text-white">Scan to Request Songs</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Layout Mode 3: CENTER (Framed Centerpiece Photo) */}
+            {session?.customScreenLayout === 'CENTER' && (
+              <div className="relative z-10 flex flex-col items-center justify-center text-center max-w-3xl mx-auto space-y-6">
+                <span className="px-4 py-1.5 rounded-full text-xs font-mono font-bold uppercase tracking-widest bg-dj-cyan/20 text-dj-cyan border border-dj-cyan/40">
+                  🎉 {session?.customScreenTag || 'MOMENT OF CELEBRATION'}
+                </span>
+                <h1 className="text-4xl md:text-6xl font-black text-white">
+                  {session?.customScreenTitle || 'Time for Cake Cutting! 🎂'}
+                </h1>
+                {session?.customScreenImageUrl && (
+                  <div className="w-80 h-56 md:w-96 md:h-64 rounded-3xl overflow-hidden border-4 border-white/30 shadow-2xl glow-cyan">
+                    <img
+                      src={session.customScreenImageUrl}
+                      alt="Celebration"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                <p className="text-xl text-slate-300 max-w-xl">
+                  {session?.customScreenSubtitle || 'Join in the celebration and make unforgettable memories!'}
+                </p>
               </div>
             )}
           </div>

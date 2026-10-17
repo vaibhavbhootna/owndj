@@ -35,6 +35,37 @@ public class VisualProjectionController {
         return ResponseEntity.ok(visualProjectionService.createTemplate(dto));
     }
 
+    @PutMapping("/projector/templates/{id}")
+    public ResponseEntity<VisualTemplateDto> updateTemplate(
+            @PathVariable java.util.UUID id,
+            @RequestBody VisualTemplateDto dto) {
+        return ResponseEntity.ok(visualProjectionService.updateTemplate(id, dto));
+    }
+
+    @DeleteMapping("/projector/templates/{id}")
+    public ResponseEntity<Map<String, String>> deleteTemplate(@PathVariable java.util.UUID id) {
+        visualProjectionService.deleteTemplate(id);
+        return ResponseEntity.ok(Map.of("message", "Template deleted"));
+    }
+
+    @PostMapping("/sessions/{roomCode}/projector/activate-template/{templateId}")
+    public ResponseEntity<Void> activateTemplate(
+            @PathVariable String roomCode,
+            @PathVariable java.util.UUID templateId,
+            @RequestHeader("X-Host-Token") String hostToken) {
+        visualProjectionService.activateTemplate(roomCode, hostToken, templateId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/sessions/{roomCode}/projector/custom-screen")
+    public ResponseEntity<Void> updateCustomScreen(
+            @PathVariable String roomCode,
+            @RequestHeader("X-Host-Token") String hostToken,
+            @RequestBody com.owndj.dto.ProjectorCustomScreenDto dto) {
+        visualProjectionService.updateCustomScreen(roomCode, hostToken, dto);
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("/sessions/{roomCode}/projector/preset")
     public ResponseEntity<Void> switchPreset(
             @PathVariable String roomCode,

@@ -49,8 +49,8 @@ public class VisualProjectionService {
                 .bannerTitle(dto.getBannerTitle() != null ? dto.getBannerTitle().trim() : "Welcome!")
                 .greetingMessage(dto.getGreetingMessage())
                 .tickerText(dto.getTickerText())
-                .themePreset(dto.getThemePreset() != null ? dto.getThemePreset() : "NOW_PLAYING")
-                .bgType(dto.getBgType() != null ? dto.getBgType() : "ANIMATED_PATTERN")
+                .themePreset(dto.getThemePreset() != null ? dto.getThemePreset() : "CUSTOM_SCREEN")
+                .bgType(dto.getBgType() != null ? dto.getBgType() : "IMAGE")
                 .bgMediaUrl(dto.getBgMediaUrl())
                 .bgOpacity(dto.getBgOpacity() > 0 ? dto.getBgOpacity() : 0.85)
                 .showQrCode(dto.isShowQrCode())
@@ -65,6 +65,114 @@ public class VisualProjectionService {
 
         template = templateRepository.save(template);
         return mapToDto(template);
+    }
+
+    @Transactional
+    public VisualTemplateDto updateTemplate(UUID id, VisualTemplateDto dto) {
+        VisualTemplate template = templateRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Visual template not found"));
+
+        if (dto.getTemplateName() != null) template.setTemplateName(dto.getTemplateName().trim());
+        if (dto.getEventType() != null) template.setEventType(dto.getEventType());
+        if (dto.getBannerTitle() != null) template.setBannerTitle(dto.getBannerTitle().trim());
+        if (dto.getGreetingMessage() != null) template.setGreetingMessage(dto.getGreetingMessage());
+        if (dto.getTickerText() != null) template.setTickerText(dto.getTickerText());
+        if (dto.getThemePreset() != null) template.setThemePreset(dto.getThemePreset());
+        if (dto.getBgType() != null) template.setBgType(dto.getBgType());
+        if (dto.getBgMediaUrl() != null) template.setBgMediaUrl(dto.getBgMediaUrl());
+        if (dto.getBgOpacity() > 0) template.setBgOpacity(dto.getBgOpacity());
+        template.setShowQrCode(dto.isShowQrCode());
+        template.setShowNowPlaying(dto.isShowNowPlaying());
+        template.setShowGuestAnnouncements(dto.isShowGuestAnnouncements());
+        template.setShowVisualizer(dto.isShowVisualizer());
+        if (dto.getPrimaryColor() != null) template.setPrimaryColor(dto.getPrimaryColor());
+        if (dto.getAccentColor() != null) template.setAccentColor(dto.getAccentColor());
+        if (dto.getFontFamily() != null) template.setFontFamily(dto.getFontFamily());
+
+        template = templateRepository.save(template);
+        return mapToDto(template);
+    }
+
+    @Transactional
+    public void deleteTemplate(UUID id) {
+        if (!templateRepository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Visual template not found");
+        }
+        templateRepository.deleteById(id);
+    }
+
+    @Transactional
+    public void activateTemplate(String roomCode, String hostToken, UUID templateId) {
+        Session session = sessionService.findSessionByRoomCode(roomCode);
+        sessionService.validateHostToken(session, hostToken);
+
+        VisualTemplate template = templateRepository.findById(templateId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Template not found"));
+
+        session.setActiveVisualPreset("CUSTOM_SCREEN");
+        session.setCustomScreenTitle(template.getBannerTitle());
+        session.setCustomScreenSubtitle(template.getGreetingMessage());
+        session.setCustomScreenImageUrl(template.getBgMediaUrl());
+        session.setCustomScreenTag(template.getTemplateName());
+        session.setTickerText(template.getTickerText());
+        if (template.getPrimaryColor() != null) {
+            session.setThemeColor(template.getPrimaryColor());
+        }
+        sessionRepository.save(session);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("preset", "CUSTOM_SCREEN");
+        payload.put("tickerText", session.getTickerText());
+        payload.put("bannerText", session.getBannerText());
+        payload.put("themeColor", session.getThemeColor());
+        payload.put("customScreenTitle", session.getCustomScreenTitle());
+        payload.put("customScreenSubtitle", session.getCustomScreenSubtitle());
+        payload.put("customScreenImageUrl", session.getCustomScreenImageUrl());
+        payload.put("customScreenTag", session.getCustomScreenTag());
+        payload.put("customScreenLayout", session.getCustomScreenLayout());
+        payload.put("customScreenShowQr", session.getCustomScreenShowQr());
+        payload.put("customScreenShowNowPlaying", session.getCustomScreenShowNowPlaying());
+
+        notificationService.broadcast(roomCode, "VISUAL_PRESET_CHANGED", payload);
+        notificationService.broadcast(roomCode, "PROJECTION_ANNOUNCEMENT", Map.of(
+                "announcement", template.getTickerText() != null ? template.getTickerText() : template.getBannerTitle(),
+                "timestamp", Instant.now().toString()
+        ));
+        log.info("Activated celebration moment '{}' in session {}", template.getTemplateName(), roomCode);
+    }
+
+    @Transactional
+    public void updateCustomScreen(String roomCode, String hostToken, com.owndj.dto.ProjectorCustomScreenDto dto) {
+        Session session = sessionService.findSessionByRoomCode(roomCode);
+        sessionService.validateHostToken(session, hostToken);
+
+        if (dto.getCustomScreenImageUrl() != null) session.setCustomScreenImageUrl(dto.getCustomScreenImageUrl().trim());
+        if (dto.getCustomScreenTitle() != null) session.setCustomScreenTitle(dto.getCustomScreenTitle().trim());
+        if (dto.getCustomScreenSubtitle() != null) session.setCustomScreenSubtitle(dto.getCustomScreenSubtitle().trim());
+        if (dto.getCustomScreenTag() != null) session.setCustomScreenTag(dto.getCustomScreenTag().trim());
+        if (dto.getCustomScreenLayout() != null) session.setCustomScreenLayout(dto.getCustomScreenLayout());
+        if (dto.getCustomScreenShowQr() != null) session.setCustomScreenShowQr(dto.getCustomScreenShowQr());
+        if (dto.getCustomScreenShowNowPlaying() != null) session.setCustomScreenShowNowPlaying(dto.getCustomScreenShowNowPlaying());
+
+        if (Boolean.TRUE.equals(dto.getActivateImmediately())) {
+            session.setActiveVisualPreset("CUSTOM_SCREEN");
+        }
+        sessionRepository.save(session);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("preset", session.getActiveVisualPreset());
+        payload.put("tickerText", session.getTickerText());
+        payload.put("bannerText", session.getBannerText());
+        payload.put("themeColor", session.getThemeColor());
+        payload.put("customScreenTitle", session.getCustomScreenTitle());
+        payload.put("customScreenSubtitle", session.getCustomScreenSubtitle());
+        payload.put("customScreenImageUrl", session.getCustomScreenImageUrl());
+        payload.put("customScreenTag", session.getCustomScreenTag());
+        payload.put("customScreenLayout", session.getCustomScreenLayout());
+        payload.put("customScreenShowQr", session.getCustomScreenShowQr());
+        payload.put("customScreenShowNowPlaying", session.getCustomScreenShowNowPlaying());
+
+        notificationService.broadcast(roomCode, "VISUAL_PRESET_CHANGED", payload);
     }
 
     @Transactional

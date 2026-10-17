@@ -38,6 +38,13 @@ public class SessionResponse {
     private String bannerText;
     private String activeVisualPreset;
     private String tickerText;
+    private String customScreenImageUrl;
+    private String customScreenTitle;
+    private String customScreenSubtitle;
+    private String customScreenTag;
+    private String customScreenLayout;
+    private boolean customScreenShowQr;
+    private boolean customScreenShowNowPlaying;
 
     // DJ Deck state
     private int currentDjTrackIndex;
