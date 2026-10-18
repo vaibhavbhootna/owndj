@@ -22,6 +22,13 @@ import {
   Palette,
   QrCode,
   Volume2,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  Move,
+  Sun,
+  Contrast,
+  RefreshCw,
 } from 'lucide-react';
 
 interface ProjectorControlModalProps {
@@ -65,6 +72,32 @@ export const ProjectorControlModal: React.FC<ProjectorControlModalProps> = ({
   );
   const [showQr, setShowQr] = useState(session.customScreenShowQr !== false);
   const [showNowPlaying, setShowNowPlaying] = useState(session.customScreenShowNowPlaying !== false);
+
+  // Picture Adjustment state
+  const [imageFit, setImageFit] = useState<'cover' | 'contain'>(
+    (session.customScreenImageFit as any) || 'cover'
+  );
+  const [imageScale, setImageScale] = useState<number>(
+    session.customScreenImageScale ?? 100
+  );
+  const [imageRotate, setImageRotate] = useState<number>(
+    session.customScreenImageRotate ?? 0
+  );
+  const [imagePosX, setImagePosX] = useState<number>(
+    session.customScreenImagePosX ?? 50
+  );
+  const [imagePosY, setImagePosY] = useState<number>(
+    session.customScreenImagePosY ?? 50
+  );
+  const [imageBrightness, setImageBrightness] = useState<number>(
+    session.customScreenImageBrightness ?? 100
+  );
+  const [imageContrast, setImageContrast] = useState<number>(
+    session.customScreenImageContrast ?? 100
+  );
+  const [imageBorder, setImageBorder] = useState<'neon' | 'gold' | 'glass' | 'none'>(
+    (session.customScreenImageBorder as any) || 'neon'
+  );
 
   // State for templates & uploads
   const [savedTemplates, setSavedTemplates] = useState<VisualTemplate[]>([]);
@@ -232,6 +265,22 @@ export const ProjectorControlModal: React.FC<ProjectorControlModalProps> = ({
     }
   };
 
+  const handleRotateImage = () => {
+    setImageRotate((prev) => (prev + 90) % 360);
+  };
+
+  const handleResetAdjustments = () => {
+    setImageFit('cover');
+    setImageScale(100);
+    setImageRotate(0);
+    setImagePosX(50);
+    setImagePosY(50);
+    setImageBrightness(100);
+    setImageContrast(100);
+    setImageBorder('neon');
+    showStatus('Picture adjustments reset to defaults');
+  };
+
   const handleProjectCustomScreenNow = async () => {
     try {
       await api.updateProjectorCustomScreen(session.roomCode, hostToken, {
@@ -242,6 +291,14 @@ export const ProjectorControlModal: React.FC<ProjectorControlModalProps> = ({
         customScreenLayout: customLayout,
         customScreenShowQr: showQr,
         customScreenShowNowPlaying: showNowPlaying,
+        customScreenImageFit: imageFit,
+        customScreenImageScale: imageScale,
+        customScreenImageRotate: imageRotate,
+        customScreenImagePosX: imagePosX,
+        customScreenImagePosY: imagePosY,
+        customScreenImageBrightness: imageBrightness,
+        customScreenImageContrast: imageContrast,
+        customScreenImageBorder: imageBorder,
         activateImmediately: true,
       });
 
@@ -251,7 +308,7 @@ export const ProjectorControlModal: React.FC<ProjectorControlModalProps> = ({
       }
 
       setActivePreset('CUSTOM_SCREEN');
-      showStatus('✨ Custom screen & celebration ticker projected live!');
+      showStatus('✨ Custom screen & picture adjustments projected live!');
     } catch (err) {
       alert('Failed to project custom screen.');
     }
@@ -525,6 +582,243 @@ export const ProjectorControlModal: React.FC<ProjectorControlModalProps> = ({
                     </div>
                   </div>
 
+                  {/* Picture Adjustment & Framing Controls Card */}
+                  <div className="p-3.5 rounded-2xl bg-black/40 border border-slate-700/80 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Sliders className="w-4 h-4 text-dj-cyan" />
+                        <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                          Picture Adjustments & Framing
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleResetAdjustments}
+                        className="text-[10px] font-mono font-bold text-slate-400 hover:text-white flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                        title="Reset adjustments to defaults"
+                      >
+                        <RefreshCw className="w-3 h-3" /> Reset
+                      </button>
+                    </div>
+
+                    {/* Row 1: Fit & Rotation */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-mono text-slate-300 font-bold mb-1">
+                          Fit Mode
+                        </label>
+                        <div className="grid grid-cols-2 gap-1 bg-dj-card p-1 rounded-xl border border-dj-border">
+                          <button
+                            type="button"
+                            onClick={() => setImageFit('cover')}
+                            className={`py-1 rounded-lg text-[11px] font-bold transition-all ${
+                              imageFit === 'cover'
+                                ? 'bg-dj-cyan text-black font-extrabold shadow-sm'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Cover (Fill)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setImageFit('contain')}
+                            className={`py-1 rounded-lg text-[11px] font-bold transition-all ${
+                              imageFit === 'contain'
+                                ? 'bg-dj-cyan text-black font-extrabold shadow-sm'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            Contain (All)
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-mono text-slate-300 font-bold mb-1 flex items-center justify-between">
+                          <span>Orientation</span>
+                          <span className="text-[10px] text-dj-cyan font-bold">{imageRotate}°</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleRotateImage}
+                          className="w-full py-1.5 px-2 rounded-xl bg-dj-card border border-dj-border hover:border-dj-cyan text-slate-200 hover:text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                        >
+                          <RotateCw className="w-3.5 h-3.5 text-dj-cyan" />
+                          <span>Rotate 90°</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Zoom / Scale Slider */}
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 font-bold mb-1">
+                        <span className="flex items-center gap-1">
+                          <ZoomIn className="w-3.5 h-3.5 text-dj-cyan" /> Zoom / Scale
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setImageScale((s) => Math.max(50, s - 10))}
+                            className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 font-bold"
+                          >
+                            -
+                          </button>
+                          <span className="text-dj-cyan font-bold w-10 text-center">{imageScale}%</span>
+                          <button
+                            type="button"
+                            onClick={() => setImageScale((s) => Math.min(200, s + 10))}
+                            className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 font-bold"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setImageScale(100)}
+                            className="ml-1 text-[9px] text-slate-400 hover:text-white underline"
+                          >
+                            100%
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="50"
+                        max="200"
+                        step="5"
+                        value={imageScale}
+                        onChange={(e) => setImageScale(Number(e.target.value))}
+                        className="w-full accent-dj-cyan cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Row 3: Position / Pan (X and Y offsets) */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 font-bold">
+                        <span className="flex items-center gap-1">
+                          <Move className="w-3.5 h-3.5 text-dj-magenta" /> Focal Pan / Alignment
+                        </span>
+                        <div className="flex items-center gap-1 text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => { setImagePosX(50); setImagePosY(15); }}
+                            className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-300"
+                          >
+                            Top
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setImagePosX(50); setImagePosY(50); }}
+                            className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-300"
+                          >
+                            Center
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setImagePosX(50); setImagePosY(85); }}
+                            className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-300"
+                          >
+                            Bottom
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                        <div>
+                          <div className="flex justify-between text-slate-400 mb-0.5">
+                            <span>Horiz (X)</span>
+                            <span className="text-white font-bold">{imagePosX}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={imagePosX}
+                            onChange={(e) => setImagePosX(Number(e.target.value))}
+                            className="w-full accent-dj-magenta cursor-pointer"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-slate-400 mb-0.5">
+                            <span>Vert (Y)</span>
+                            <span className="text-white font-bold">{imagePosY}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={imagePosY}
+                            onChange={(e) => setImagePosY(Number(e.target.value))}
+                            className="w-full accent-dj-magenta cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 4: Brightness & Contrast */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 font-bold mb-1">
+                          <span className="flex items-center gap-1">
+                            <Sun className="w-3 h-3 text-amber-400" /> Brightness
+                          </span>
+                          <span className="text-white font-bold">{imageBrightness}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="50"
+                          max="150"
+                          value={imageBrightness}
+                          onChange={(e) => setImageBrightness(Number(e.target.value))}
+                          className="w-full accent-amber-400 cursor-pointer"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 font-bold mb-1">
+                          <span className="flex items-center gap-1">
+                            <Contrast className="w-3 h-3 text-cyan-400" /> Contrast
+                          </span>
+                          <span className="text-white font-bold">{imageContrast}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="50"
+                          max="150"
+                          value={imageContrast}
+                          onChange={(e) => setImageContrast(Number(e.target.value))}
+                          className="w-full accent-cyan-400 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 5: Frame Style */}
+                    <div>
+                      <label className="block text-[11px] font-mono text-slate-300 font-bold mb-1">
+                        Frame / Border Style
+                      </label>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[
+                          { id: 'neon', label: 'Neon Glow' },
+                          { id: 'gold', label: 'Gold Glam' },
+                          { id: 'glass', label: 'Glass' },
+                          { id: 'none', label: 'No Frame' },
+                        ].map((b) => (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onClick={() => setImageBorder(b.id as any)}
+                            className={`py-1 px-1 rounded-xl text-[10px] font-bold border transition-all text-center ${
+                              imageBorder === b.id
+                                ? 'bg-dj-cyan/20 border-dj-cyan text-white glow-cyan'
+                                : 'bg-dj-card border-dj-border text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {b.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Moment Tag / Badge */}
                   <div>
                     <label className="block text-xs font-mono font-bold text-slate-300 uppercase mb-1">
@@ -642,11 +936,17 @@ export const ProjectorControlModal: React.FC<ProjectorControlModalProps> = ({
                     <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-slate-700 bg-[#05050c] shadow-2xl flex flex-col justify-between p-4 select-none">
                       {/* Blurred Background Simulation */}
                       {customImageUrl && (
-                        <div className="absolute inset-0 pointer-events-none z-0">
+                        <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
                           <img
                             src={customImageUrl}
                             alt="Preview"
-                            className="w-full h-full object-cover filter blur-[2px] brightness-[0.25]"
+                            className="w-full h-full"
+                            style={{
+                              objectFit: imageFit,
+                              objectPosition: `${imagePosX}% ${imagePosY}%`,
+                              transform: `scale(${imageScale / 100}) rotate(${imageRotate}deg)`,
+                              filter: `blur(2px) brightness(${((imageBrightness * 0.25) / 100)}) contrast(${imageContrast}%)`,
+                            }}
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/70" />
                         </div>
@@ -664,8 +964,29 @@ export const ProjectorControlModal: React.FC<ProjectorControlModalProps> = ({
                       <div className="relative z-10 my-auto">
                         {customLayout === 'SPLIT' && (
                           <div className="flex items-center gap-3">
-                            <div className="w-28 h-20 rounded-xl overflow-hidden border border-white/30 flex-shrink-0 shadow-lg">
-                              <img src={customImageUrl} alt="" className="w-full h-full object-cover" />
+                            <div className={`w-32 h-20 rounded-xl overflow-hidden flex-shrink-0 shadow-lg ${
+                              imageBorder === 'gold'
+                                ? 'border-2 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.6)] p-0.5'
+                                : imageBorder === 'glass'
+                                ? 'border border-white/40 bg-white/10 backdrop-blur-md p-0.5'
+                                : imageBorder === 'none'
+                                ? 'border-0 p-0'
+                                : 'p-0.5 bg-gradient-to-tr from-dj-cyan via-pink-500 to-amber-400 glow-cyan'
+                            }`}>
+                              <div className="w-full h-full overflow-hidden rounded-lg bg-black/50 flex items-center justify-center">
+                                <img
+                                  src={customImageUrl}
+                                  alt=""
+                                  className="w-full h-full"
+                                  style={{
+                                    objectFit: imageFit,
+                                    objectPosition: `${imagePosX}% ${imagePosY}%`,
+                                    transform: `scale(${imageScale / 100}) rotate(${imageRotate}deg)`,
+                                    transformOrigin: `${imagePosX}% ${imagePosY}%`,
+                                    filter: `brightness(${imageBrightness}%) contrast(${imageContrast}%)`,
+                                  }}
+                                />
+                              </div>
                             </div>
                             <div className="space-y-1 text-left min-w-0">
                               <span className="text-[9px] font-mono font-bold text-amber-300 uppercase block">
@@ -693,8 +1014,29 @@ export const ProjectorControlModal: React.FC<ProjectorControlModalProps> = ({
                           <div className="text-center space-y-1">
                             <span className="text-[9px] font-mono font-bold text-dj-cyan uppercase">{customTag}</span>
                             <h5 className="font-black text-xs text-white">{customTitle}</h5>
-                            <div className="w-24 h-16 mx-auto rounded-lg overflow-hidden border border-white/30 shadow-md">
-                              <img src={customImageUrl} alt="" className="w-full h-full object-cover" />
+                            <div className={`w-28 h-18 mx-auto rounded-xl overflow-hidden shadow-md ${
+                              imageBorder === 'gold'
+                                ? 'border-2 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.6)] p-0.5'
+                                : imageBorder === 'glass'
+                                ? 'border border-white/40 bg-white/10 backdrop-blur-md p-0.5'
+                                : imageBorder === 'none'
+                                ? 'border-0 p-0'
+                                : 'p-0.5 bg-gradient-to-tr from-dj-cyan via-pink-500 to-amber-400 glow-cyan'
+                            }`}>
+                              <div className="w-full h-full overflow-hidden rounded-lg bg-black/50 flex items-center justify-center">
+                                <img
+                                  src={customImageUrl}
+                                  alt=""
+                                  className="w-full h-full"
+                                  style={{
+                                    objectFit: imageFit,
+                                    objectPosition: `${imagePosX}% ${imagePosY}%`,
+                                    transform: `scale(${imageScale / 100}) rotate(${imageRotate}deg)`,
+                                    transformOrigin: `${imagePosX}% ${imagePosY}%`,
+                                    filter: `brightness(${imageBrightness}%) contrast(${imageContrast}%)`,
+                                  }}
+                                />
+                              </div>
                             </div>
                             <p className="text-[9px] text-slate-300 line-clamp-1">{customSubtitle}</p>
                           </div>

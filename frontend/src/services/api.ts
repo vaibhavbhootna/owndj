@@ -26,13 +26,55 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 export const api = {
   // Session API
-  async createSession(name: string): Promise<Session> {
+  async createSession(name: string, customRoomCode?: string, djPasscode?: string): Promise<Session> {
+    const payload: { name: string; customRoomCode?: string; djPasscode?: string } = { name };
+    if (customRoomCode && customRoomCode.trim()) {
+      payload.customRoomCode = customRoomCode.trim().toUpperCase();
+    }
+    if (djPasscode && djPasscode.trim()) {
+      payload.djPasscode = djPasscode.trim();
+    }
     const res = await fetch(`${API_BASE}/api/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(payload),
     });
     return handleResponse<Session>(res);
+  },
+
+  async djLogin(roomCode: string, passcode: string): Promise<Session> {
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/dj-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passcode }),
+    });
+    return handleResponse<Session>(res);
+  },
+
+  async getAllSessions(activeOnly?: boolean): Promise<Session[]> {
+    const params = activeOnly ? '?activeOnly=true' : '';
+    const res = await fetch(`${API_BASE}/api/sessions${params}`);
+    return handleResponse<Session[]>(res);
+  },
+
+  async closeSession(roomCode: string, hostToken?: string): Promise<Session> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (hostToken) headers['X-Host-Token'] = hostToken;
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/close`, {
+      method: 'POST',
+      headers,
+    });
+    return handleResponse<Session>(res);
+  },
+
+  async deleteSession(roomCode: string, hostToken?: string): Promise<{ message: string }> {
+    const headers: Record<string, string> = {};
+    if (hostToken) headers['X-Host-Token'] = hostToken;
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}`, {
+      method: 'DELETE',
+      headers,
+    });
+    return handleResponse<{ message: string }>(res);
   },
 
   async getSession(roomCode: string, hostToken?: string): Promise<Session> {
@@ -76,8 +118,18 @@ export const api = {
     return handleResponse<Session>(res);
   },
 
-  async getQrCode(roomCode: string): Promise<{ roomCode: string; joinUrl: string; qrCodeDataUrl: string }> {
-    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/qrcode`);
+  async getQrCode(
+    roomCode: string,
+    origin?: string,
+    type: 'join' | 'dj' = 'join',
+    passcode?: string
+  ): Promise<{ roomCode: string; joinUrl: string; qrCodeDataUrl: string }> {
+    const params = new URLSearchParams();
+    if (origin) params.append('origin', origin);
+    if (type && type !== 'join') params.append('type', type);
+    if (passcode) params.append('passcode', passcode);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/qrcode${qs}`);
     return handleResponse<{ roomCode: string; joinUrl: string; qrCodeDataUrl: string }>(res);
   },
 
@@ -341,6 +393,22 @@ export const api = {
     return handleResponse<import('../types').EventDJTrack[]>(res);
   },
 
+  async setDeckDurationAll(
+    roomCode: string,
+    hostToken: string,
+    durationSeconds: number
+  ): Promise<import('../types').EventDJTrack[]> {
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/deck/duration-all`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Host-Token': hostToken,
+      },
+      body: JSON.stringify({ durationSeconds }),
+    });
+    return handleResponse<import('../types').EventDJTrack[]>(res);
+  },
+
   async loadPlaylistIntoDeck(
     roomCode: string,
     hostToken: string,
@@ -382,6 +450,14 @@ export const api = {
     return handleResponse<PlaybackState>(res);
   },
 
+  async playSingleLibraryTrack(roomCode: string, playlistTrackId: string, hostToken: string): Promise<PlaybackState> {
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/deck/play-library-track/${playlistTrackId}`, {
+      method: 'POST',
+      headers: { 'X-Host-Token': hostToken },
+    });
+    return handleResponse<PlaybackState>(res);
+  },
+
   async importYouTubePlaylist(
     roomCode: string,
     hostToken: string,
@@ -414,6 +490,57 @@ export const api = {
       body: JSON.stringify({ csvContent, replaceExisting: !!replaceExisting }),
     });
     return handleResponse<import('../types').EventDJTrack[]>(res);
+  },
+
+  async resolveSongBatch(
+    items: string[],
+    autoSelectFirst: boolean = true
+  ): Promise<import('../types').ResolveSongItem[]> {
+    const res = await fetch(`${API_BASE}/api/songs/resolve-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, autoSelectFirst }),
+    });
+    return handleResponse<import('../types').ResolveSongItem[]>(res);
+  },
+
+  async resolveSingle(
+    input: string,
+    autoSelectFirst: boolean = true
+  ): Promise<import('../types').ResolveSongItem> {
+    const res = await fetch(
+      `${API_BASE}/api/songs/resolve-single?input=${encodeURIComponent(input)}&autoSelectFirst=${autoSelectFirst}`
+    );
+    return handleResponse<import('../types').ResolveSongItem>(res);
+  },
+
+  async importResolvedTracks(
+    roomCode: string,
+    hostToken: string,
+    tracks: any[],
+    replaceExisting?: boolean
+  ): Promise<import('../types').EventDJTrack[]> {
+    const res = await fetch(`${API_BASE}/api/sessions/${roomCode.toUpperCase()}/deck/import-resolved`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Host-Token': hostToken,
+      },
+      body: JSON.stringify({ tracks, replaceExisting: !!replaceExisting }),
+    });
+    return handleResponse<import('../types').EventDJTrack[]>(res);
+  },
+
+  async importResolvedIntoLibrary(
+    name: string,
+    tracks: any[]
+  ): Promise<import('../types').DJPlaylist> {
+    const res = await fetch(`${API_BASE}/api/dj/playlists/import-resolved`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, tracks }),
+    });
+    return handleResponse<import('../types').DJPlaylist>(res);
   },
 
   async universalSearch(

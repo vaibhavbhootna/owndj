@@ -32,6 +32,7 @@ public class PlaylistExportImportService {
     private final DJPlaylistTrackRepository djPlaylistTrackRepository;
     private final SessionService sessionService;
     private final ObjectMapper objectMapper;
+    private final YouTubeService youTubeService;
 
     // ==========================================
     // EXPORT
@@ -158,6 +159,62 @@ public class PlaylistExportImportService {
 
         djPlaylistTrackRepository.saveAll(playlistTracks);
         log.info("Imported {} tracks into new DJ Library set '{}'", tracks.size(), playlist.getName());
+
+        return DJPlaylistDto.builder()
+                .id(playlist.getId())
+                .name(playlist.getName())
+                .trackCount(playlistTracks.size())
+                .estimatedDurationSeconds(totalDur)
+                .build();
+    }
+
+    @Transactional
+    public DJPlaylistDto importResolvedIntoLibrary(String name, List<Map<String, Object>> tracks) {
+        if (tracks == null || tracks.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No tracks provided to import");
+        }
+
+        int totalDur = 0;
+        for (Map<String, Object> t : tracks) {
+            int dur = t.get("durationSeconds") instanceof Number ? ((Number) t.get("durationSeconds")).intValue() : 210;
+            totalDur += dur;
+        }
+
+        DJPlaylist playlist = DJPlaylist.builder()
+                .name(name != null && !name.isBlank() ? name.trim() : "Imported Set - " + Instant.now())
+                .trackCount(tracks.size())
+                .estimatedDurationSeconds(totalDur)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        playlist = djPlaylistRepository.save(playlist);
+
+        List<DJPlaylistTrack> playlistTracks = new ArrayList<>();
+        for (int i = 0; i < tracks.size(); i++) {
+            Map<String, Object> t = tracks.get(i);
+            String title = (String) t.getOrDefault("title", "Unknown Track");
+            String artist = (String) t.getOrDefault("artist", (String) t.getOrDefault("channelTitle", "YouTube Artist"));
+            String videoId = (String) t.getOrDefault("videoId", (String) t.getOrDefault("sourceIdentifier", ""));
+            int durationSeconds = t.get("durationSeconds") instanceof Number ? ((Number) t.get("durationSeconds")).intValue() : 210;
+            int startSeconds = t.get("startSeconds") instanceof Number ? ((Number) t.get("startSeconds")).intValue() : 0;
+            String notes = (String) t.getOrDefault("notes", "");
+
+            playlistTracks.add(DJPlaylistTrack.builder()
+                    .playlist(playlist)
+                    .title(title)
+                    .artist(artist)
+                    .sourceType("YOUTUBE")
+                    .sourceIdentifier(videoId)
+                    .durationSeconds(durationSeconds > 0 ? durationSeconds : 210)
+                    .startSeconds(startSeconds)
+                    .sortOrder(i)
+                    .notes(notes)
+                    .build());
+        }
+
+        djPlaylistTrackRepository.saveAll(playlistTracks);
+        log.info("Imported {} resolved tracks into DJ Library playlist '{}'", playlistTracks.size(), playlist.getName());
 
         return DJPlaylistDto.builder()
                 .id(playlist.getId())
@@ -335,21 +392,29 @@ public class PlaylistExportImportService {
                     } else if (!line.startsWith("#") && !line.isBlank()) {
                         String sourceId = line;
                         String sourceType = "YOUTUBE";
-                        if (line.contains("youtube.com/watch?v=")) {
-                            sourceId = line.substring(line.indexOf("v=") + 2);
-                            int amp = sourceId.indexOf('&');
-                            if (amp > 0) sourceId = sourceId.substring(0, amp);
-                        } else if (line.startsWith("local://")) {
-                            sourceType = "LOCAL_MP3";
-                            sourceId = line.substring(8);
-                        }
-
                         String artist = "Various Artists";
                         String title = currentTitle != null ? currentTitle : "Imported Track";
                         if (title.contains(" - ")) {
                             String[] split = title.split(" - ", 2);
                             artist = split[0].trim();
                             title = split[1].trim();
+                        }
+
+                        if (line.contains("search_query=") || line.contains("/results?") || line.contains("/results")) {
+                            var resolved = youTubeService.resolveSong(line, true);
+                            if (resolved != null && resolved.getSelectedMatch() != null) {
+                                sourceId = resolved.getSelectedMatch().getVideoId();
+                                title = resolved.getSelectedMatch().getTitle();
+                                artist = resolved.getSelectedMatch().getChannelTitle();
+                                currentDuration = resolved.getSelectedMatch().getDurationSeconds();
+                            }
+                        } else if (line.contains("youtube.com/watch?v=")) {
+                            sourceId = line.substring(line.indexOf("v=") + 2);
+                            int amp = sourceId.indexOf('&');
+                            if (amp > 0) sourceId = sourceId.substring(0, amp);
+                        } else if (line.startsWith("local://")) {
+                            sourceType = "LOCAL_MP3";
+                            sourceId = line.substring(8);
                         }
 
                         tracks.add(new ExportableTrack(title, artist, "", sourceType, sourceId, currentDuration, 0, "UNPLAYED", ""));

@@ -12,14 +12,31 @@ import {
   Heart,
   Volume2,
   X,
+  Sliders,
+  RotateCw,
+  ZoomIn,
+  Move,
+  Sun,
+  Contrast,
+  RefreshCw,
+  Save,
+  Check,
+  Lock,
 } from 'lucide-react';
 
 interface ProjectorScreenProps {
   roomCode: string;
   onBack?: () => void;
+  isEmbedded?: boolean;
+  hostToken?: string;
 }
 
-export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBack }) => {
+export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({
+  roomCode,
+  onBack,
+  isEmbedded = false,
+  hostToken,
+}) => {
   const [session, setSession] = useState<Session | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [activePreset, setActivePreset] = useState<ProjectionPreset>('NOW_PLAYING');
@@ -33,6 +50,51 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
     autoAdvance: true,
   });
 
+  // On-screen Picture Adjustment HUD state
+  const [showAdjustHud, setShowAdjustHud] = useState(false);
+  const [hudFit, setHudFit] = useState<'cover' | 'contain'>('cover');
+  const [hudScale, setHudScale] = useState<number>(100);
+  const [hudRotate, setHudRotate] = useState<number>(0);
+  const [hudPosX, setHudPosX] = useState<number>(50);
+  const [hudPosY, setHudPosY] = useState<number>(50);
+  const [hudBrightness, setHudBrightness] = useState<number>(100);
+  const [hudContrast, setHudContrast] = useState<number>(100);
+  const [hudBorder, setHudBorder] = useState<'neon' | 'gold' | 'glass' | 'none'>('neon');
+  const [isSavingHud, setIsSavingHud] = useState(false);
+  const [hudSaveFeedback, setHudSaveFeedback] = useState<string | null>(null);
+  const [djPasscodePrompt, setDjPasscodePrompt] = useState(false);
+  const [djPasscodeInput, setDjPasscodeInput] = useState('');
+
+  const effectiveHostToken =
+    hostToken ||
+    localStorage.getItem(`owndj_host_token_${roomCode}`) ||
+    localStorage.getItem('owndj_host_token') ||
+    new URLSearchParams(window.location.search).get('token') ||
+    '';
+
+  // Sync HUD state whenever session picture adjustment fields update
+  useEffect(() => {
+    if (session) {
+      if (session.customScreenImageFit) setHudFit(session.customScreenImageFit as any);
+      if (session.customScreenImageScale !== undefined) setHudScale(session.customScreenImageScale);
+      if (session.customScreenImageRotate !== undefined) setHudRotate(session.customScreenImageRotate);
+      if (session.customScreenImagePosX !== undefined) setHudPosX(session.customScreenImagePosX);
+      if (session.customScreenImagePosY !== undefined) setHudPosY(session.customScreenImagePosY);
+      if (session.customScreenImageBrightness !== undefined) setHudBrightness(session.customScreenImageBrightness);
+      if (session.customScreenImageContrast !== undefined) setHudContrast(session.customScreenImageContrast);
+      if (session.customScreenImageBorder) setHudBorder(session.customScreenImageBorder as any);
+    }
+  }, [
+    session?.customScreenImageFit,
+    session?.customScreenImageScale,
+    session?.customScreenImageRotate,
+    session?.customScreenImagePosX,
+    session?.customScreenImagePosY,
+    session?.customScreenImageBrightness,
+    session?.customScreenImageContrast,
+    session?.customScreenImageBorder,
+  ]);
+
   // Fetch initial data
   useEffect(() => {
     if (!roomCode) return;
@@ -45,7 +107,12 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
       })
       .catch((err) => console.warn('Failed to load session for projector:', err));
 
-    api.getQrCode(roomCode)
+    const savedTunnel = localStorage.getItem('owndj_tunnel_url');
+    const origin = (savedTunnel && savedTunnel.trim())
+      ? savedTunnel.trim()
+      : (!window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1') ? window.location.origin : undefined);
+
+    api.getQrCode(roomCode, origin)
       .then((qr) => setQrDataUrl(qr.qrCodeDataUrl))
       .catch((err) => console.warn('Failed to load QR for projector:', err));
 
@@ -77,8 +144,29 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
           customScreenLayout: event.payload.customScreenLayout ?? prev.customScreenLayout,
           customScreenShowQr: event.payload.customScreenShowQr ?? prev.customScreenShowQr,
           customScreenShowNowPlaying: event.payload.customScreenShowNowPlaying ?? prev.customScreenShowNowPlaying,
+          customScreenImageFit: event.payload.customScreenImageFit ?? prev.customScreenImageFit,
+          customScreenImageScale: event.payload.customScreenImageScale ?? prev.customScreenImageScale,
+          customScreenImageRotate: event.payload.customScreenImageRotate ?? prev.customScreenImageRotate,
+          customScreenImagePosX: event.payload.customScreenImagePosX ?? prev.customScreenImagePosX,
+          customScreenImagePosY: event.payload.customScreenImagePosY ?? prev.customScreenImagePosY,
+          customScreenImageBrightness: event.payload.customScreenImageBrightness ?? prev.customScreenImageBrightness,
+          customScreenImageContrast: event.payload.customScreenImageContrast ?? prev.customScreenImageContrast,
+          customScreenImageBorder: event.payload.customScreenImageBorder ?? prev.customScreenImageBorder,
         };
       });
+    });
+
+    const unsubEvent = wsService.subscribe('EVENT_DETAILS_UPDATED', (event) => {
+      setSession((prev) => {
+        if (!prev) return event.payload;
+        return { ...prev, ...event.payload };
+      });
+      if (event.payload.activeVisualPreset) {
+        setActivePreset(event.payload.activeVisualPreset);
+      }
+      if (event.payload.tickerText) {
+        setTickerMessage(event.payload.tickerText);
+      }
     });
 
     const unsubAnnouncement = wsService.subscribe('PROJECTION_ANNOUNCEMENT', (event) => {
@@ -92,17 +180,110 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
     return () => {
       unsubTrack();
       unsubPreset();
+      unsubEvent();
       unsubAnnouncement();
       wsService.disconnect();
     };
   }, [roomCode]);
+
+  const handleResetHud = () => {
+    setHudFit('cover');
+    setHudScale(100);
+    setHudRotate(0);
+    setHudPosX(50);
+    setHudPosY(50);
+    setHudBrightness(100);
+    setHudContrast(100);
+    setHudBorder('neon');
+  };
+
+  const handleSaveAdjustments = async (passcodeOverride?: string) => {
+    setIsSavingHud(true);
+    setHudSaveFeedback(null);
+    const token = passcodeOverride || effectiveHostToken;
+
+    if (!token) {
+      setDjPasscodePrompt(true);
+      setIsSavingHud(false);
+      return;
+    }
+
+    try {
+      await api.updateProjectorCustomScreen(roomCode, token, {
+        customScreenTitle: session?.customScreenTitle,
+        customScreenSubtitle: session?.customScreenSubtitle,
+        customScreenTag: session?.customScreenTag,
+        customScreenImageUrl: session?.customScreenImageUrl,
+        customScreenLayout: session?.customScreenLayout as any,
+        customScreenShowQr: session?.customScreenShowQr,
+        customScreenShowNowPlaying: session?.customScreenShowNowPlaying,
+        customScreenImageFit: hudFit,
+        customScreenImageScale: hudScale,
+        customScreenImageRotate: hudRotate,
+        customScreenImagePosX: hudPosX,
+        customScreenImagePosY: hudPosY,
+        customScreenImageBrightness: hudBrightness,
+        customScreenImageContrast: hudContrast,
+        customScreenImageBorder: hudBorder,
+      });
+
+      if (passcodeOverride) {
+        localStorage.setItem(`owndj_host_token_${roomCode}`, passcodeOverride);
+        setDjPasscodePrompt(false);
+      }
+
+      setHudSaveFeedback('Adjustments saved & synced live!');
+      setTimeout(() => setHudSaveFeedback(null), 3500);
+    } catch (err: any) {
+      if (passcodeOverride) {
+        alert('Invalid DJ passcode or host token.');
+      } else {
+        setDjPasscodePrompt(true);
+      }
+    } finally {
+      setIsSavingHud(false);
+    }
+  };
+
+  const computeImageStyle = (
+    fit: string = 'cover',
+    scale: number = 100,
+    rotate: number = 0,
+    posX: number = 50,
+    posY: number = 50,
+    brightness: number = 100,
+    contrast: number = 100
+  ): React.CSSProperties => {
+    return {
+      objectFit: (fit as any) || 'cover',
+      objectPosition: `${posX}% ${posY}%`,
+      transform: `scale(${scale / 100}) rotate(${rotate}deg)`,
+      transformOrigin: `${posX}% ${posY}%`,
+      filter: `brightness(${brightness}%) contrast(${contrast}%)`,
+      transition: 'transform 0.1s ease-out, filter 0.1s ease-out, object-position 0.1s ease-out',
+    };
+  };
+
+  const getFrameStyleClass = (border: string = 'neon') => {
+    switch (border) {
+      case 'gold':
+        return 'border-4 border-amber-400 shadow-[0_0_35px_rgba(251,191,36,0.65)] bg-gradient-to-tr from-amber-500/30 via-yellow-400/20 to-amber-600/30 p-2';
+      case 'glass':
+        return 'border-2 border-white/50 shadow-2xl backdrop-blur-md bg-white/10 p-2';
+      case 'none':
+        return 'border-0 shadow-2xl p-0';
+      case 'neon':
+      default:
+        return 'p-1.5 bg-gradient-to-tr from-dj-cyan via-pink-500 to-amber-400 shadow-2xl glow-cyan';
+    }
+  };
 
   const themeColor = session?.themeColor || '#06b6d4';
   const bannerTitle = session?.bannerText || session?.name || 'VIRTUAL DJ LIVE';
   const track = playbackState.currentTrack;
 
   return (
-    <div className="fixed inset-0 bg-[#05050c] text-white flex flex-col justify-between overflow-hidden select-none font-sans">
+    <div className={`${isEmbedded ? 'relative w-full h-full min-h-[360px] rounded-2xl' : 'fixed inset-0'} bg-[#05050c] text-white flex flex-col justify-between overflow-hidden select-none font-sans`}>
       {/* Dynamic Animated Ambient Background */}
       <div className="absolute inset-0 pointer-events-none opacity-40">
         <div
@@ -122,11 +303,11 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
       )}
 
       {/* Top Header Bar */}
-      <header className="relative z-10 px-10 py-6 flex items-center justify-between border-b border-white/10 backdrop-blur-md bg-black/30">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-dj-cyan/20 border border-dj-cyan/40">
-            <Radio className="w-4 h-4 text-dj-cyan animate-pulse" />
-            <span className="font-mono text-xs font-bold tracking-wider text-dj-cyan uppercase">
+      <header className={`relative z-10 flex items-center justify-between border-b border-white/10 backdrop-blur-md bg-black/30 ${isEmbedded ? 'px-4 py-2.5' : 'px-10 py-6'}`}>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-dj-cyan/20 border border-dj-cyan/40">
+            <Radio className="w-3.5 h-3.5 text-dj-cyan animate-pulse" />
+            <span className="font-mono text-[11px] font-bold tracking-wider text-dj-cyan uppercase">
               LIVE SESSION • {roomCode}
             </span>
           </div>
@@ -135,20 +316,35 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
           )}
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <div className="text-right">
-            <h2 className="text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-slate-400">
+            <h2 className="text-xl md:text-2xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-slate-400">
               {session?.name || 'Virtual DJ Event'}
             </h2>
             <p className="text-xs text-slate-400 font-mono mt-0.5">
               {session?.eventDate || 'Tonight'}
             </p>
           </div>
+
+          {/* Quick Picture Adjustment HUD toggle button */}
+          <button
+            onClick={() => setShowAdjustHud((v) => !v)}
+            className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg ${
+              showAdjustHud
+                ? 'bg-dj-cyan text-black border-dj-cyan font-black glow-cyan'
+                : 'bg-white/10 hover:bg-white/20 border-white/20 text-slate-200 hover:text-white backdrop-blur-md'
+            }`}
+            title="Adjust picture framing, zoom, rotation, and filters on screen"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Adjust Picture</span>
+          </button>
+
           {onBack && (
             <button
               onClick={onBack}
               title="Exit Projector Mode"
-              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all ml-2"
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-all ml-1"
             >
               <X className="w-5 h-5" />
             </button>
@@ -156,8 +352,288 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
         </div>
       </header>
 
+      {/* Floating Interactive Picture Adjustment HUD Overlay */}
+      {showAdjustHud && (
+        <div className="fixed right-4 top-20 z-50 w-80 max-h-[82vh] overflow-y-auto bg-slate-950/95 backdrop-blur-2xl border border-dj-cyan/40 rounded-3xl p-4 shadow-2xl space-y-3.5 animate-fade-in text-white text-xs">
+          {/* HUD Header */}
+          <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-dj-cyan" />
+              <span className="font-extrabold text-sm text-white">Adjust Picture</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleResetHud}
+                className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-mono text-slate-300 hover:text-white flex items-center gap-1 transition-colors"
+                title="Reset to defaults"
+              >
+                <RefreshCw className="w-3 h-3" /> Reset
+              </button>
+              <button
+                onClick={() => setShowAdjustHud(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Fit Mode */}
+          <div>
+            <label className="block text-[11px] font-mono text-slate-300 font-bold mb-1">
+              Fit Mode
+            </label>
+            <div className="grid grid-cols-2 gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+              <button
+                onClick={() => setHudFit('cover')}
+                className={`py-1 rounded-lg font-bold transition-all text-center ${
+                  hudFit === 'cover'
+                    ? 'bg-dj-cyan text-black font-extrabold shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Cover (Fill)
+              </button>
+              <button
+                onClick={() => setHudFit('contain')}
+                className={`py-1 rounded-lg font-bold transition-all text-center ${
+                  hudFit === 'contain'
+                    ? 'bg-dj-cyan text-black font-extrabold shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Contain (All)
+              </button>
+            </div>
+          </div>
+
+          {/* Orientation & Rotate */}
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="block text-[11px] font-mono text-slate-300 font-bold">Orientation</span>
+              <span className="text-[10px] text-slate-400">Angle: <strong className="text-dj-cyan">{hudRotate}°</strong></span>
+            </div>
+            <button
+              onClick={() => setHudRotate((r) => (r + 90) % 360)}
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold flex items-center gap-1.5 border border-white/10 hover:border-dj-cyan transition-all"
+            >
+              <RotateCw className="w-3.5 h-3.5 text-dj-cyan" />
+              <span>Rotate 90°</span>
+            </button>
+          </div>
+
+          {/* Scale / Zoom Slider */}
+          <div>
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 font-bold mb-1">
+              <span className="flex items-center gap-1">
+                <ZoomIn className="w-3.5 h-3.5 text-dj-cyan" /> Zoom / Scale
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setHudScale((s) => Math.max(50, s - 10))}
+                  className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px]"
+                >
+                  -
+                </button>
+                <span className="text-dj-cyan font-bold w-10 text-center">{hudScale}%</span>
+                <button
+                  onClick={() => setHudScale((s) => Math.min(200, s + 10))}
+                  className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px]"
+                >
+                  +
+                </button>
+                <button
+                  onClick={() => setHudScale(100)}
+                  className="ml-1 text-[9px] text-slate-400 hover:text-white underline"
+                >
+                  100%
+                </button>
+              </div>
+            </div>
+            <input
+              type="range"
+              min="50"
+              max="200"
+              step="5"
+              value={hudScale}
+              onChange={(e) => setHudScale(Number(e.target.value))}
+              className="w-full accent-dj-cyan cursor-pointer"
+            />
+          </div>
+
+          {/* Pan / Focal Position */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 font-bold">
+              <span className="flex items-center gap-1">
+                <Move className="w-3.5 h-3.5 text-dj-magenta" /> Focal Alignment
+              </span>
+              <div className="flex items-center gap-1 text-[10px]">
+                <button
+                  onClick={() => { setHudPosX(50); setHudPosY(15); }}
+                  className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-300"
+                >
+                  Top
+                </button>
+                <button
+                  onClick={() => { setHudPosX(50); setHudPosY(50); }}
+                  className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-300"
+                >
+                  Center
+                </button>
+                <button
+                  onClick={() => { setHudPosX(50); setHudPosY(85); }}
+                  className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-300"
+                >
+                  Bottom
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+              <div>
+                <div className="flex justify-between text-slate-400 mb-0.5">
+                  <span>Horiz (X)</span>
+                  <span className="text-white font-bold">{hudPosX}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={hudPosX}
+                  onChange={(e) => setHudPosX(Number(e.target.value))}
+                  className="w-full accent-dj-magenta cursor-pointer"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between text-slate-400 mb-0.5">
+                  <span>Vert (Y)</span>
+                  <span className="text-white font-bold">{hudPosY}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={hudPosY}
+                  onChange={(e) => setHudPosY(Number(e.target.value))}
+                  className="w-full accent-dj-magenta cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Brightness & Contrast */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 font-bold mb-1">
+                <span className="flex items-center gap-1">
+                  <Sun className="w-3 h-3 text-amber-400" /> Brightness
+                </span>
+                <span className="text-white font-bold">{hudBrightness}%</span>
+              </div>
+              <input
+                type="range"
+                min="50"
+                max="150"
+                value={hudBrightness}
+                onChange={(e) => setHudBrightness(Number(e.target.value))}
+                className="w-full accent-amber-400 cursor-pointer"
+              />
+            </div>
+            <div>
+              <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 font-bold mb-1">
+                <span className="flex items-center gap-1">
+                  <Contrast className="w-3 h-3 text-cyan-400" /> Contrast
+                </span>
+                <span className="text-white font-bold">{hudContrast}%</span>
+              </div>
+              <input
+                type="range"
+                min="50"
+                max="150"
+                value={hudContrast}
+                onChange={(e) => setHudContrast(Number(e.target.value))}
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+            </div>
+          </div>
+
+          {/* Frame Style */}
+          <div>
+            <label className="block text-[11px] font-mono text-slate-300 font-bold mb-1">
+              Frame / Border
+            </label>
+            <div className="grid grid-cols-4 gap-1">
+              {[
+                { id: 'neon', label: 'Neon' },
+                { id: 'gold', label: 'Gold' },
+                { id: 'glass', label: 'Glass' },
+                { id: 'none', label: 'None' },
+              ].map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => setHudBorder(b.id as any)}
+                  className={`py-1 px-1 rounded-xl text-[10px] font-bold border transition-all text-center ${
+                    hudBorder === b.id
+                      ? 'bg-dj-cyan/20 border-dj-cyan text-white glow-cyan'
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Feedback message */}
+          {hudSaveFeedback && (
+            <div className="p-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-1.5 animate-fade-in">
+              <Check className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{hudSaveFeedback}</span>
+            </div>
+          )}
+
+          {/* Passcode prompt if saving without token */}
+          {djPasscodePrompt && (
+            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2 animate-fade-in">
+              <div className="flex items-center gap-1.5 text-amber-300 font-bold text-[11px]">
+                <Lock className="w-3.5 h-3.5" />
+                <span>Enter DJ Passcode or Host Token to save:</span>
+              </div>
+              <div className="flex gap-1.5">
+                <input
+                  type="password"
+                  placeholder="DJ Passcode..."
+                  value={djPasscodeInput}
+                  onChange={(e) => setDjPasscodeInput(e.target.value)}
+                  className="flex-1 px-2.5 py-1.5 bg-black/60 border border-white/20 rounded-lg text-xs text-white focus:outline-none focus:border-dj-cyan font-mono"
+                />
+                <button
+                  onClick={() => handleSaveAdjustments(djPasscodeInput.trim())}
+                  disabled={isSavingHud || !djPasscodeInput.trim()}
+                  className="px-3 py-1.5 rounded-lg bg-amber-400 text-black font-extrabold text-xs hover:bg-amber-300 transition-colors disabled:opacity-50"
+                >
+                  Unlock
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Save / Sync Button */}
+          <div className="pt-1">
+            <button
+              onClick={() => handleSaveAdjustments()}
+              disabled={isSavingHud}
+              className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-dj-cyan to-dj-magenta text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg hover:scale-[1.01] active:scale-95 transition-all disabled:opacity-50"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{isSavingHud ? 'Saving & Broadcasting...' : 'Save & Sync to All Screens'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Scene Body (Changes based on active preset) */}
-      <main className="relative z-10 flex-1 flex items-center justify-center p-8 max-w-7xl mx-auto w-full">
+      <main className={`relative z-10 flex-1 flex items-center justify-center max-w-7xl mx-auto w-full overflow-hidden ${isEmbedded ? 'p-3 scale-90 sm:scale-95 origin-center' : 'p-8'}`}>
         {/* PRESET 1: WELCOME SCREEN */}
         {activePreset === 'WELCOME' && (
           <div className="flex flex-col md:flex-row items-center justify-between gap-12 w-full animate-fade-in">
@@ -363,7 +839,13 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
                 <img
                   src={session.customScreenImageUrl}
                   alt="Celebration Background"
-                  className="w-full h-full object-cover filter blur-[2px] brightness-[0.25] scale-105 transition-all duration-1000"
+                  className="w-full h-full transition-all duration-300"
+                  style={{
+                    objectFit: hudFit,
+                    objectPosition: `${hudPosX}% ${hudPosY}%`,
+                    transform: `scale(${hudScale / 100}) rotate(${hudRotate}deg)`,
+                    filter: `blur(2px) brightness(${((hudBrightness * 0.25) / 100)}) contrast(${hudContrast}%)`,
+                  }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#05050c] via-black/40 to-[#05050c]/70" />
               </div>
@@ -374,20 +856,31 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
               <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-12 w-full max-w-6xl mx-auto px-4">
                 {/* Left: Custom Hero Image / Photo */}
                 <div className="flex-1 max-w-lg w-full flex items-center justify-center">
-                  <div className="relative group rounded-3xl p-1.5 bg-gradient-to-tr from-dj-cyan via-pink-500 to-amber-400 shadow-2xl glow-cyan w-full">
-                    {session?.customScreenImageUrl ? (
-                      <img
-                        src={session.customScreenImageUrl}
-                        alt="Celebration Visual"
-                        className="w-full h-72 md:h-96 object-cover rounded-2xl shadow-2xl"
-                      />
-                    ) : (
-                      <div className="w-full h-72 md:h-96 rounded-2xl bg-slate-900/90 flex flex-col items-center justify-center text-slate-400 p-6 text-center">
-                        <Sparkles className="w-16 h-16 text-yellow-400 mb-3 animate-spin" />
-                        <span className="text-white font-bold text-lg">Custom Celebration Visual</span>
-                        <span className="text-xs text-slate-400 mt-1">Upload an image or pick a celebration moment</span>
-                      </div>
-                    )}
+                  <div className={`relative group rounded-3xl shadow-2xl w-full transition-all ${getFrameStyleClass(hudBorder)}`}>
+                    <div className="w-full h-72 md:h-96 rounded-2xl overflow-hidden bg-black/40 flex items-center justify-center">
+                      {session?.customScreenImageUrl ? (
+                        <img
+                          src={session.customScreenImageUrl}
+                          alt="Celebration Visual"
+                          className="w-full h-full shadow-2xl transition-transform duration-100"
+                          style={computeImageStyle(
+                            hudFit,
+                            hudScale,
+                            hudRotate,
+                            hudPosX,
+                            hudPosY,
+                            hudBrightness,
+                            hudContrast
+                          )}
+                        />
+                      ) : (
+                        <div className="w-full h-72 md:h-96 rounded-2xl bg-slate-900/90 flex flex-col items-center justify-center text-slate-400 p-6 text-center">
+                          <Sparkles className="w-16 h-16 text-yellow-400 mb-3 animate-spin" />
+                          <span className="text-white font-bold text-lg">Custom Celebration Visual</span>
+                          <span className="text-xs text-slate-400 mt-1">Upload an image or pick a celebration moment</span>
+                        </div>
+                      )}
+                    </div>
                     {/* Floating Celebration Badge */}
                     <div className="absolute -bottom-3 -right-3 px-4 py-1.5 rounded-full bg-dj-magenta text-black font-black text-xs uppercase shadow-xl tracking-wider flex items-center gap-1.5 glow-magenta">
                       <Sparkles className="w-3.5 h-3.5" />
@@ -472,12 +965,23 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
                   {session?.customScreenTitle || 'Time for Cake Cutting! 🎂'}
                 </h1>
                 {session?.customScreenImageUrl && (
-                  <div className="w-80 h-56 md:w-96 md:h-64 rounded-3xl overflow-hidden border-4 border-white/30 shadow-2xl glow-cyan">
-                    <img
-                      src={session.customScreenImageUrl}
-                      alt="Celebration"
-                      className="w-full h-full object-cover"
-                    />
+                  <div className={`w-80 h-56 md:w-[480px] md:h-80 mx-auto rounded-3xl overflow-hidden shadow-2xl transition-all ${getFrameStyleClass(hudBorder)}`}>
+                    <div className="w-full h-full rounded-2xl overflow-hidden bg-black/40 flex items-center justify-center">
+                      <img
+                        src={session.customScreenImageUrl}
+                        alt="Celebration"
+                        className="w-full h-full transition-transform duration-100"
+                        style={computeImageStyle(
+                          hudFit,
+                          hudScale,
+                          hudRotate,
+                          hudPosX,
+                          hudPosY,
+                          hudBrightness,
+                          hudContrast
+                        )}
+                      />
+                    </div>
                   </div>
                 )}
                 <p className="text-xl text-slate-300 max-w-xl">
@@ -490,7 +994,7 @@ export const ProjectorScreen: React.FC<ProjectorScreenProps> = ({ roomCode, onBa
       </main>
 
       {/* Bottom Live Ticker Marquee */}
-      <footer className="relative z-10 px-8 py-4 border-t border-white/10 bg-black/60 backdrop-blur-md flex items-center gap-4 overflow-hidden">
+      <footer className={`relative z-10 border-t border-white/10 bg-black/60 backdrop-blur-md flex items-center gap-4 overflow-hidden ${isEmbedded ? 'px-4 py-2 text-xs' : 'px-8 py-4'}`}>
         <div className="px-3 py-1 rounded-lg bg-dj-magenta/20 border border-dj-magenta/40 text-dj-magenta font-mono text-xs font-bold uppercase tracking-wider flex-shrink-0 flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5" /> LIVE
         </div>

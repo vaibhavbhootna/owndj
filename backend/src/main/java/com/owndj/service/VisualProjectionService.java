@@ -132,6 +132,14 @@ public class VisualProjectionService {
         payload.put("customScreenLayout", session.getCustomScreenLayout());
         payload.put("customScreenShowQr", session.getCustomScreenShowQr());
         payload.put("customScreenShowNowPlaying", session.getCustomScreenShowNowPlaying());
+        payload.put("customScreenImageFit", session.getCustomScreenImageFit() != null ? session.getCustomScreenImageFit() : "cover");
+        payload.put("customScreenImageScale", session.getCustomScreenImageScale() != null ? session.getCustomScreenImageScale() : 100);
+        payload.put("customScreenImageRotate", session.getCustomScreenImageRotate() != null ? session.getCustomScreenImageRotate() : 0);
+        payload.put("customScreenImagePosX", session.getCustomScreenImagePosX() != null ? session.getCustomScreenImagePosX() : 50);
+        payload.put("customScreenImagePosY", session.getCustomScreenImagePosY() != null ? session.getCustomScreenImagePosY() : 50);
+        payload.put("customScreenImageBrightness", session.getCustomScreenImageBrightness() != null ? session.getCustomScreenImageBrightness() : 100);
+        payload.put("customScreenImageContrast", session.getCustomScreenImageContrast() != null ? session.getCustomScreenImageContrast() : 100);
+        payload.put("customScreenImageBorder", session.getCustomScreenImageBorder() != null ? session.getCustomScreenImageBorder() : "neon");
 
         notificationService.broadcast(roomCode, "VISUAL_PRESET_CHANGED", payload);
         notificationService.broadcast(roomCode, "PROJECTION_ANNOUNCEMENT", Map.of(
@@ -153,6 +161,14 @@ public class VisualProjectionService {
         if (dto.getCustomScreenLayout() != null) session.setCustomScreenLayout(dto.getCustomScreenLayout());
         if (dto.getCustomScreenShowQr() != null) session.setCustomScreenShowQr(dto.getCustomScreenShowQr());
         if (dto.getCustomScreenShowNowPlaying() != null) session.setCustomScreenShowNowPlaying(dto.getCustomScreenShowNowPlaying());
+        if (dto.getCustomScreenImageFit() != null) session.setCustomScreenImageFit(dto.getCustomScreenImageFit());
+        if (dto.getCustomScreenImageScale() != null) session.setCustomScreenImageScale(dto.getCustomScreenImageScale());
+        if (dto.getCustomScreenImageRotate() != null) session.setCustomScreenImageRotate(dto.getCustomScreenImageRotate());
+        if (dto.getCustomScreenImagePosX() != null) session.setCustomScreenImagePosX(dto.getCustomScreenImagePosX());
+        if (dto.getCustomScreenImagePosY() != null) session.setCustomScreenImagePosY(dto.getCustomScreenImagePosY());
+        if (dto.getCustomScreenImageBrightness() != null) session.setCustomScreenImageBrightness(dto.getCustomScreenImageBrightness());
+        if (dto.getCustomScreenImageContrast() != null) session.setCustomScreenImageContrast(dto.getCustomScreenImageContrast());
+        if (dto.getCustomScreenImageBorder() != null) session.setCustomScreenImageBorder(dto.getCustomScreenImageBorder());
 
         if (Boolean.TRUE.equals(dto.getActivateImmediately())) {
             session.setActiveVisualPreset("CUSTOM_SCREEN");
@@ -171,6 +187,14 @@ public class VisualProjectionService {
         payload.put("customScreenLayout", session.getCustomScreenLayout());
         payload.put("customScreenShowQr", session.getCustomScreenShowQr());
         payload.put("customScreenShowNowPlaying", session.getCustomScreenShowNowPlaying());
+        payload.put("customScreenImageFit", session.getCustomScreenImageFit() != null ? session.getCustomScreenImageFit() : "cover");
+        payload.put("customScreenImageScale", session.getCustomScreenImageScale() != null ? session.getCustomScreenImageScale() : 100);
+        payload.put("customScreenImageRotate", session.getCustomScreenImageRotate() != null ? session.getCustomScreenImageRotate() : 0);
+        payload.put("customScreenImagePosX", session.getCustomScreenImagePosX() != null ? session.getCustomScreenImagePosX() : 50);
+        payload.put("customScreenImagePosY", session.getCustomScreenImagePosY() != null ? session.getCustomScreenImagePosY() : 50);
+        payload.put("customScreenImageBrightness", session.getCustomScreenImageBrightness() != null ? session.getCustomScreenImageBrightness() : 100);
+        payload.put("customScreenImageContrast", session.getCustomScreenImageContrast() != null ? session.getCustomScreenImageContrast() : 100);
+        payload.put("customScreenImageBorder", session.getCustomScreenImageBorder() != null ? session.getCustomScreenImageBorder() : "neon");
 
         notificationService.broadcast(roomCode, "VISUAL_PRESET_CHANGED", payload);
     }
@@ -192,6 +216,21 @@ public class VisualProjectionService {
         payload.put("bannerText", session.getBannerText());
         payload.put("eventType", session.getEventType());
         payload.put("themeColor", session.getThemeColor());
+        payload.put("customScreenTitle", session.getCustomScreenTitle());
+        payload.put("customScreenSubtitle", session.getCustomScreenSubtitle());
+        payload.put("customScreenImageUrl", session.getCustomScreenImageUrl());
+        payload.put("customScreenTag", session.getCustomScreenTag());
+        payload.put("customScreenLayout", session.getCustomScreenLayout());
+        payload.put("customScreenShowQr", session.getCustomScreenShowQr());
+        payload.put("customScreenShowNowPlaying", session.getCustomScreenShowNowPlaying());
+        payload.put("customScreenImageFit", session.getCustomScreenImageFit() != null ? session.getCustomScreenImageFit() : "cover");
+        payload.put("customScreenImageScale", session.getCustomScreenImageScale() != null ? session.getCustomScreenImageScale() : 100);
+        payload.put("customScreenImageRotate", session.getCustomScreenImageRotate() != null ? session.getCustomScreenImageRotate() : 0);
+        payload.put("customScreenImagePosX", session.getCustomScreenImagePosX() != null ? session.getCustomScreenImagePosX() : 50);
+        payload.put("customScreenImagePosY", session.getCustomScreenImagePosY() != null ? session.getCustomScreenImagePosY() : 50);
+        payload.put("customScreenImageBrightness", session.getCustomScreenImageBrightness() != null ? session.getCustomScreenImageBrightness() : 100);
+        payload.put("customScreenImageContrast", session.getCustomScreenImageContrast() != null ? session.getCustomScreenImageContrast() : 100);
+        payload.put("customScreenImageBorder", session.getCustomScreenImageBorder() != null ? session.getCustomScreenImageBorder() : "neon");
 
         notificationService.broadcast(roomCode, "VISUAL_PRESET_CHANGED", payload);
         log.info("Switched projector preset in session {} to {}", roomCode, preset);

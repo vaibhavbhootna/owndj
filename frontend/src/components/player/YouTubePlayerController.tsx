@@ -15,6 +15,8 @@ interface YouTubePlayerControllerProps {
   hostToken: string;
   playbackState: PlaybackState;
   transitionDurationSeconds: number;
+  seekToSeconds?: number | null;
+  onSeekCompleted?: () => void;
   onStateUpdate: (state: PlaybackState) => void;
   onPositionUpdate: (pos: number) => void;
 }
@@ -24,6 +26,8 @@ export const YouTubePlayerController: React.FC<YouTubePlayerControllerProps> = (
   hostToken,
   playbackState,
   transitionDurationSeconds,
+  seekToSeconds,
+  onSeekCompleted,
   onStateUpdate,
   onPositionUpdate,
 }) => {
@@ -33,6 +37,13 @@ export const YouTubePlayerController: React.FC<YouTubePlayerControllerProps> = (
   const transitionTimerRef = useRef<any>(null);
   const timePollerRef = useRef<any>(null);
   const currentTrackIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (seekToSeconds !== undefined && seekToSeconds !== null && playerRef.current && typeof playerRef.current.seekTo === 'function') {
+      playerRef.current.seekTo(seekToSeconds, true);
+      onSeekCompleted?.();
+    }
+  }, [seekToSeconds, onSeekCompleted]);
 
   const [playerStatus, setPlayerStatus] = useState<PlayerState>('IDLE');
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);

@@ -36,6 +36,13 @@ public class Session {
     @Column(name = "host_session_token_hash", nullable = false, length = 128)
     private String hostSessionTokenHash;
 
+    @Column(name = "host_session_token", length = 128)
+    private String hostSessionToken;
+
+    @Column(name = "dj_passcode", length = 64)
+    @Builder.Default
+    private String djPasscode = "1234";
+
     @Column(name = "settings_json", nullable = false, columnDefinition = "TEXT")
     private String settingsJson;
 
@@ -112,6 +119,39 @@ public class Session {
     @Column(name = "custom_screen_show_now_playing")
     @Builder.Default
     private Boolean customScreenShowNowPlaying = true;
+
+    // Picture Adjustment & Framing Attributes
+    @Column(name = "custom_screen_image_fit", length = 32)
+    @Builder.Default
+    private String customScreenImageFit = "cover";
+
+    @Column(name = "custom_screen_image_scale")
+    @Builder.Default
+    private Integer customScreenImageScale = 100;
+
+    @Column(name = "custom_screen_image_rotate")
+    @Builder.Default
+    private Integer customScreenImageRotate = 0;
+
+    @Column(name = "custom_screen_image_pos_x")
+    @Builder.Default
+    private Integer customScreenImagePosX = 50;
+
+    @Column(name = "custom_screen_image_pos_y")
+    @Builder.Default
+    private Integer customScreenImagePosY = 50;
+
+    @Column(name = "custom_screen_image_brightness")
+    @Builder.Default
+    private Integer customScreenImageBrightness = 100;
+
+    @Column(name = "custom_screen_image_contrast")
+    @Builder.Default
+    private Integer customScreenImageContrast = 100;
+
+    @Column(name = "custom_screen_image_border", length = 32)
+    @Builder.Default
+    private String customScreenImageBorder = "neon";
 
     // DJ Deck State & Playback Rules
     @Column(name = "current_dj_track_index")

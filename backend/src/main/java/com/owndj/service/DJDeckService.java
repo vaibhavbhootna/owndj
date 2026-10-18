@@ -2,6 +2,7 @@ package com.owndj.service;
 
 import com.owndj.dto.EventDJTrackDto;
 import com.owndj.dto.LibraryTrackMatchDto;
+import com.owndj.dto.ResolveSongItemDto;
 import com.owndj.dto.SongDto;
 import com.owndj.dto.SongSearchResult;
 import com.owndj.dto.UniversalSearchResponseDto;
@@ -85,6 +86,7 @@ public class DJDeckService {
         if (dto.getArtist() != null) track.setArtist(dto.getArtist().trim());
         if (dto.getAlbum() != null) track.setAlbum(dto.getAlbum());
         if (dto.getStartSeconds() >= 0) track.setStartSeconds(dto.getStartSeconds());
+        if (dto.getDurationSeconds() > 0) track.setDurationSeconds(dto.getDurationSeconds());
         if (dto.getTransitionType() != null) track.setTransitionType(dto.getTransitionType());
         if (dto.getTransitionDurationSeconds() > 0) track.setTransitionDurationSeconds(dto.getTransitionDurationSeconds());
         track.setIsFavorite(dto.isFavorite());
@@ -135,6 +137,21 @@ public class DJDeckService {
         eventDJTrackRepository.saveAll(reordered);
         broadcastDeckUpdate(roomCode);
         return reordered.stream().map(this::mapToDto).collect(Collectors.toList());
+    }
+
+    @Transactional
+    public List<EventDJTrackDto> setAllTracksDuration(String roomCode, String hostToken, int durationSeconds) {
+        Session session = sessionService.findSessionByRoomCode(roomCode);
+        sessionService.validateHostToken(session, hostToken);
+
+        List<EventDJTrack> tracks = eventDJTrackRepository.findBySessionOrderBySortOrderAsc(session);
+        for (EventDJTrack t : tracks) {
+            t.setDurationSeconds(durationSeconds);
+        }
+        tracks = eventDJTrackRepository.saveAll(tracks);
+        broadcastDeckUpdate(roomCode);
+        log.info("Set duration to {}s for all {} tracks in deck for session {}", durationSeconds, tracks.size(), roomCode);
+        return tracks.stream().map(this::mapToDto).collect(Collectors.toList());
     }
 
     @Transactional
@@ -342,6 +359,16 @@ public class DJDeckService {
                     }
                 }
 
+                if (videoId == null) {
+                    ResolveSongItemDto resolved = youTubeService.resolveSong(line, true);
+                    if (resolved != null && resolved.getSelectedMatch() != null) {
+                        videoId = resolved.getSelectedMatch().getVideoId();
+                        title = resolved.getSelectedMatch().getTitle();
+                        artist = resolved.getSelectedMatch().getChannelTitle();
+                        duration = resolved.getSelectedMatch().getDurationSeconds();
+                    }
+                }
+
                 if (videoId == null) continue;
 
                 if (title == null || title.isBlank() || title.equalsIgnoreCase(videoId)) {
@@ -456,5 +483,61 @@ public class DJDeckService {
                 .youTubeMatches(youtubeMatches)
                 .totalMatches(total)
                 .build();
+    }
+
+    @Transactional
+    public List<EventDJTrackDto> importResolvedTracks(
+            String roomCode,
+            String hostToken,
+            List<Map<String, Object>> tracks,
+            boolean replaceExisting) {
+        Session session = sessionService.findSessionByRoomCode(roomCode);
+        sessionService.validateHostToken(session, hostToken);
+
+        if (tracks == null || tracks.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No tracks provided to import");
+        }
+
+        if (replaceExisting) {
+            eventDJTrackRepository.deleteBySession(session);
+        }
+
+        int startSort = replaceExisting ? 0 : eventDJTrackRepository.countBySession(session);
+        List<EventDJTrack> deckTracks = new ArrayList<>();
+
+        for (int i = 0; i < tracks.size(); i++) {
+            Map<String, Object> t = tracks.get(i);
+            String title = (String) t.getOrDefault("title", "Unknown Track");
+            String artist = (String) t.getOrDefault("artist", (String) t.getOrDefault("channelTitle", "YouTube Artist"));
+            String videoId = (String) t.getOrDefault("videoId", (String) t.getOrDefault("sourceIdentifier", ""));
+            int durationSeconds = t.get("durationSeconds") instanceof Number ? ((Number) t.get("durationSeconds")).intValue() : 210;
+            int startSeconds = t.get("startSeconds") instanceof Number ? ((Number) t.get("startSeconds")).intValue() : 0;
+            String notes = (String) t.getOrDefault("notes", "");
+
+            deckTracks.add(EventDJTrack.builder()
+                    .session(session)
+                    .title(title)
+                    .artist(artist)
+                    .album("Smart Song Resolver")
+                    .sourceType("YOUTUBE")
+                    .sourceIdentifier(videoId)
+                    .durationSeconds(durationSeconds > 0 ? durationSeconds : 210)
+                    .startSeconds(startSeconds)
+                    .transitionType("CROSSFADE")
+                    .transitionDurationSeconds(5)
+                    .playbackStatus("UNPLAYED")
+                    .sortOrder(startSort + i)
+                    .notes(notes)
+                    .createdAt(Instant.now())
+                    .build());
+        }
+
+        eventDJTrackRepository.saveAll(deckTracks);
+        log.info("Imported {} resolved tracks into session {} DJ Deck", deckTracks.size(), roomCode);
+        broadcastDeckUpdate(roomCode);
+
+        return eventDJTrackRepository.findBySessionOrderBySortOrderAsc(session).stream()
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
     }
 }

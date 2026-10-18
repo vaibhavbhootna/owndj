@@ -28,8 +28,17 @@ public class EventDetailsUpdateDto {
     private String customScreenLayout;
     private Boolean customScreenShowQr;
     private Boolean customScreenShowNowPlaying;
+    private String customScreenImageFit;
+    private Integer customScreenImageScale;
+    private Integer customScreenImageRotate;
+    private Integer customScreenImagePosX;
+    private Integer customScreenImagePosY;
+    private Integer customScreenImageBrightness;
+    private Integer customScreenImageContrast;
+    private String customScreenImageBorder;
     private Boolean deckRepeat;
     private Boolean deckShuffle;
     private Boolean guestRequestsPaused;
     private Integer requestCooldownSeconds;
+    private String djPasscode;
 }

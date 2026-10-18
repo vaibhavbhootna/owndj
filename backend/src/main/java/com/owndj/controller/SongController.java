@@ -1,6 +1,7 @@
 package com.owndj.controller;
 
 import com.owndj.dto.CreateMomentDto;
+import com.owndj.dto.ResolveSongItemDto;
 import com.owndj.dto.SongMomentDto;
 import com.owndj.dto.SongSearchResult;
 import com.owndj.security.RateLimiterService;
@@ -14,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -38,6 +41,37 @@ public class SongController {
 
         List<SongSearchResult> results = youTubeService.search(query);
         return ResponseEntity.ok(results);
+    }
+
+    @PostMapping("/songs/resolve-batch")
+    public ResponseEntity<List<ResolveSongItemDto>> resolveBatch(
+            @RequestBody Map<String, Object> payload) {
+        List<String> items = new ArrayList<>();
+        Object itemsObj = payload.get("items");
+        if (itemsObj instanceof List<?>) {
+            for (Object obj : (List<?>) itemsObj) {
+                if (obj != null) {
+                    items.add(obj.toString());
+                }
+            }
+        } else if (itemsObj instanceof String) {
+            String text = (String) itemsObj;
+            items.addAll(Arrays.asList(text.split("\\r?\\n")));
+        }
+        boolean autoSelectFirst = Boolean.TRUE.equals(payload.getOrDefault("autoSelectFirst", true));
+        List<ResolveSongItemDto> resolved = youTubeService.resolveBatch(items, autoSelectFirst);
+        return ResponseEntity.ok(resolved);
+    }
+
+    @GetMapping("/songs/resolve-single")
+    public ResponseEntity<ResolveSongItemDto> resolveSingle(
+            @RequestParam("input") String input,
+            @RequestParam(value = "autoSelectFirst", defaultValue = "true") boolean autoSelectFirst) {
+        ResolveSongItemDto resolved = youTubeService.resolveSong(input, autoSelectFirst);
+        if (resolved == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(resolved);
     }
 
     @GetMapping("/songs/{videoId}/moments")

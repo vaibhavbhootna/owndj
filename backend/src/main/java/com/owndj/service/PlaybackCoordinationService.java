@@ -29,6 +29,7 @@ public class PlaybackCoordinationService {
     private final SessionRepository sessionRepository;
     private final SongRequestRepository songRequestRepository;
     private final EventDJTrackRepository eventDJTrackRepository;
+    private final com.owndj.repository.DJPlaylistTrackRepository djPlaylistTrackRepository;
     private final EventPlaybackHistoryRepository historyRepository;
     private final NotificationService notificationService;
 
@@ -125,8 +126,22 @@ public class PlaybackCoordinationService {
                                 .build())
                         .guestNickname("DJ Deck")
                         .requestedStartSeconds(djTrack.getStartSeconds())
-                        .requestedDurationSeconds(djTrack.getDurationSeconds() > 0 ? djTrack.getDurationSeconds() : 60)
-                        .requestedEndSeconds(djTrack.getStartSeconds() + (djTrack.getDurationSeconds() > 0 ? djTrack.getDurationSeconds() : 60))
+                        .requestedDurationSeconds(
+                                djTrack.getDurationSeconds() > 0
+                                        ? djTrack.getDurationSeconds()
+                                        : (session.getSettings().getDefaultSongDurationSeconds() > 0
+                                                ? session.getSettings().getDefaultSongDurationSeconds()
+                                                : 60)
+                        )
+                        .requestedEndSeconds(
+                                djTrack.getStartSeconds() + (
+                                        djTrack.getDurationSeconds() > 0
+                                                ? djTrack.getDurationSeconds()
+                                                : (session.getSettings().getDefaultSongDurationSeconds() > 0
+                                                        ? session.getSettings().getDefaultSongDurationSeconds()
+                                                        : 60)
+                                )
+                        )
                         .status(RequestStatus.PLAYING)
                         .selectedSourceType(djTrack.getSourceType())
                         .selectedSourceId(djTrack.getSourceIdentifier())
@@ -199,8 +214,22 @@ public class PlaybackCoordinationService {
                         .build())
                 .guestNickname("DJ Deck")
                 .requestedStartSeconds(targetTrack.getStartSeconds())
-                .requestedDurationSeconds(targetTrack.getDurationSeconds() > 0 ? targetTrack.getDurationSeconds() : 60)
-                .requestedEndSeconds(targetTrack.getStartSeconds() + (targetTrack.getDurationSeconds() > 0 ? targetTrack.getDurationSeconds() : 60))
+                .requestedDurationSeconds(
+                        targetTrack.getDurationSeconds() > 0
+                                ? targetTrack.getDurationSeconds()
+                                : (session.getSettings().getDefaultSongDurationSeconds() > 0
+                                        ? session.getSettings().getDefaultSongDurationSeconds()
+                                        : 60)
+                )
+                .requestedEndSeconds(
+                        targetTrack.getStartSeconds() + (
+                                targetTrack.getDurationSeconds() > 0
+                                        ? targetTrack.getDurationSeconds()
+                                        : (session.getSettings().getDefaultSongDurationSeconds() > 0
+                                                ? session.getSettings().getDefaultSongDurationSeconds()
+                                                : 60)
+                        )
+                )
                 .status(RequestStatus.PLAYING)
                 .selectedSourceType(targetTrack.getSourceType())
                 .selectedSourceId(targetTrack.getSourceIdentifier())
@@ -221,6 +250,60 @@ public class PlaybackCoordinationService {
 
         notificationService.broadcast(roomCode, "CURRENT_TRACK_CHANGED", state);
         notificationService.broadcast(roomCode, "DJ_DECK_UPDATED", eventDJTrackRepository.findBySessionOrderBySortOrderAsc(session));
+        return state;
+    }
+
+    @Transactional
+    public PlaybackStateDto playSinglePlaylistTrack(String roomCode, String hostToken, String playlistTrackId) {
+        Session session = sessionService.findSessionByRoomCode(roomCode);
+        sessionService.validateHostToken(session, hostToken);
+
+        com.owndj.model.DJPlaylistTrack pt = djPlaylistTrackRepository.findById(UUID.fromString(playlistTrackId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Playlist track not found in library"));
+
+        recordCurrentTrackHistoryAndComplete(session, "SKIPPED");
+
+        String transitionId = UUID.randomUUID().toString();
+        activeTransitions.put(session.getId(), transitionId);
+
+        int duration = pt.getDurationSeconds() > 0
+                ? pt.getDurationSeconds()
+                : (session.getSettings().getDefaultSongDurationSeconds() > 0
+                        ? session.getSettings().getDefaultSongDurationSeconds()
+                        : 60);
+
+        SongRequestDto virtualDto = SongRequestDto.builder()
+                .id(pt.getId())
+                .song(SongDto.builder()
+                        .title(pt.getTitle())
+                        .channelTitle(pt.getArtist())
+                        .youtubeVideoId(pt.getSourceIdentifier())
+                        .thumbnailUrl("https://i.ytimg.com/vi/" + pt.getSourceIdentifier() + "/hqdefault.jpg")
+                        .durationSeconds(pt.getDurationSeconds())
+                        .build())
+                .guestNickname("DJ Library")
+                .requestedStartSeconds(pt.getStartSeconds())
+                .requestedDurationSeconds(duration)
+                .requestedEndSeconds(pt.getStartSeconds() + duration)
+                .status(RequestStatus.PLAYING)
+                .selectedSourceType(pt.getSourceType())
+                .selectedSourceId(pt.getSourceIdentifier())
+                .build();
+
+        PlaybackStateDto state = PlaybackStateDto.builder()
+                .status("PLAYING")
+                .currentTrack(virtualDto)
+                .currentPositionSeconds(pt.getStartSeconds())
+                .volume(100)
+                .autoAdvance(session.getSettings().isAutoAdvance())
+                .transitionId(transitionId)
+                .playlistSource("DJ_LIBRARY_SINGLE")
+                .activeVisualPreset(session.getActiveVisualPreset())
+                .tickerText(session.getTickerText())
+                .build();
+
+        log.info("Playing single pre-saved library track '{}' by {} in session {}", pt.getTitle(), pt.getArtist(), roomCode);
+        notificationService.broadcast(roomCode, "CURRENT_TRACK_CHANGED", state);
         return state;
     }
 

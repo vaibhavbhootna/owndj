@@ -5,6 +5,7 @@ import { wsService } from './services/websocket';
 import { DjDashboard } from './components/dj/DjDashboard';
 import { GuestHome } from './components/guest/GuestHome';
 import { ProjectorScreen } from './components/projector/ProjectorScreen';
+import { EventsManager } from './components/events/EventsManager';
 import {
   Radio,
   Music,
@@ -16,11 +17,14 @@ import {
   Check,
   AlertCircle,
   Tv,
+  Key,
+  Smartphone,
+  X,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
   // Navigation State
-  const [view, setView] = useState<'landing' | 'dj' | 'guest' | 'projector'>('landing');
+  const [view, setView] = useState<'landing' | 'dj' | 'guest' | 'projector' | 'events'>('landing');
 
   // Session & Auth State
   const [session, setSession] = useState<Session | null>(null);
@@ -38,31 +42,80 @@ export const App: React.FC = () => {
 
   // Landing form states
   const [partyName, setPartyName] = useState('Saturday Live Session');
+  const [customCodeInput, setCustomCodeInput] = useState('');
+  const [createDjPasscode, setCreateDjPasscode] = useState('1234');
   const [joinRoomCode, setJoinRoomCode] = useState('');
   const [guestNickname, setGuestNickname] = useState('');
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isJoiningSession, setIsJoiningSession] = useState(false);
   const [landingError, setLandingError] = useState<string | null>(null);
 
-  // Check URL pathname for direct joins like /join/:roomCode, /dj/:roomCode, or /projector/:roomCode
+  // DJ Remote Phone Login Modal State
+  const [isDjLoginOpen, setIsDjLoginOpen] = useState(false);
+  const [djLoginRoomCode, setDjLoginRoomCode] = useState('');
+  const [djLoginPasscode, setDjLoginPasscode] = useState('');
+  const [isDjLoggingIn, setIsDjLoggingIn] = useState(false);
+  const [djLoginError, setDjLoginError] = useState<string | null>(null);
+
+  const handleDjLogin = async (roomCode: string, passcode: string) => {
+    setIsDjLoggingIn(true);
+    setDjLoginError(null);
+    try {
+      const code = roomCode.trim().toUpperCase();
+      const sess = await api.djLogin(code, passcode.trim());
+      setSession(sess);
+      const token = sess.hostToken || passcode.trim();
+      setHostToken(token);
+      localStorage.setItem(`owndj_host_${code}`, token);
+
+      const [q, qr] = await Promise.all([
+        api.getQueue(code),
+        api.getQrCode(code, getEffectiveOrigin()),
+      ]);
+      setQueue(q);
+      setQrDataUrl(qr.qrCodeDataUrl);
+
+      setIsDjLoginOpen(false);
+      setView('dj');
+      window.history.pushState({}, '', `/dj/${code}`);
+    } catch (err: any) {
+      setDjLoginError(err.message || 'Invalid DJ passcode. Please check with the event manager.');
+      setIsDjLoginOpen(true);
+    } finally {
+      setIsDjLoggingIn(false);
+    }
+  };
+
+  // Check URL pathname for direct joins like /join/:roomCode, /dj/:roomCode, /projector/:roomCode, or /events
   useEffect(() => {
     const path = window.location.pathname;
-    const joinMatch = path.match(/^\/(?:join|party)\/([a-zA-Z0-9]+)/i);
-    const djMatch = path.match(/^\/dj\/([a-zA-Z0-9]+)/i);
-    const projectorMatch = path.match(/^\/projector\/([a-zA-Z0-9]+)/i);
+    const eventsMatch = path.match(/^\/events/i);
+    const joinMatch = path.match(/^\/(?:join|party)\/([a-zA-Z0-9_-]+)/i);
+    const djMatch = path.match(/^\/dj\/([a-zA-Z0-9_-]+)/i);
+    const projectorMatch = path.match(/^\/projector\/([a-zA-Z0-9_-]+)/i);
 
-    if (projectorMatch && projectorMatch[1]) {
+    if (eventsMatch) {
+      setView('events');
+    } else if (projectorMatch && projectorMatch[1]) {
       setJoinRoomCode(projectorMatch[1].toUpperCase());
       setView('projector');
     } else if (joinMatch && joinMatch[1]) {
       setJoinRoomCode(joinMatch[1].toUpperCase());
     } else if (djMatch && djMatch[1]) {
       const code = djMatch[1].toUpperCase();
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlPasscode = searchParams.get('passcode');
       const savedToken = localStorage.getItem(`owndj_host_${code}`);
-      if (savedToken) {
+
+      if (urlPasscode) {
+        handleDjLogin(code, urlPasscode);
+      } else if (savedToken) {
         setJoinRoomCode(code);
         setHostToken(savedToken);
         loadSessionAsHost(code, savedToken);
+      } else {
+        setDjLoginRoomCode(code);
+        setIsDjLoginOpen(true);
       }
     }
   }, []);
@@ -123,6 +176,15 @@ export const App: React.FC = () => {
     }
   }, [guest?.id]);
 
+  const getEffectiveOrigin = () => {
+    const saved = localStorage.getItem('owndj_tunnel_url');
+    if (saved && saved.trim()) return saved.trim();
+    if (!window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1')) {
+      return window.location.origin;
+    }
+    return undefined;
+  };
+
   const loadSessionAsHost = async (roomCode: string, token: string) => {
     try {
       const sess = await api.getSession(roomCode, token);
@@ -133,7 +195,7 @@ export const App: React.FC = () => {
       // Fetch initial queue and QR
       const [q, qr] = await Promise.all([
         api.getQueue(roomCode),
-        api.getQrCode(roomCode),
+        api.getQrCode(roomCode, getEffectiveOrigin()),
       ]);
       setQueue(q);
       setQrDataUrl(qr.qrCodeDataUrl);
@@ -151,7 +213,11 @@ export const App: React.FC = () => {
     setLandingError(null);
 
     try {
-      const newSession = await api.createSession(partyName.trim());
+      const newSession = await api.createSession(
+        partyName.trim(),
+        customCodeInput.trim() ? customCodeInput.trim() : undefined,
+        createDjPasscode.trim() ? createDjPasscode.trim() : undefined
+      );
       setSession(newSession);
       const token = newSession.hostToken || '';
       setHostToken(token);
@@ -159,7 +225,7 @@ export const App: React.FC = () => {
 
       const [q, qr] = await Promise.all([
         api.getQueue(newSession.roomCode),
-        api.getQrCode(newSession.roomCode),
+        api.getQrCode(newSession.roomCode, getEffectiveOrigin()),
       ]);
       setQueue(q);
       setQrDataUrl(qr.qrCodeDataUrl);
@@ -172,6 +238,21 @@ export const App: React.FC = () => {
     } finally {
       setIsCreatingSession(false);
     }
+  };
+
+  const handleOpenDjFromManager = async (roomCode: string, token?: string) => {
+    const effectiveToken = token || localStorage.getItem(`owndj_host_${roomCode}`) || '';
+    if (!effectiveToken) {
+      setDjLoginRoomCode(roomCode);
+      setDjLoginPasscode('');
+      setDjLoginError(null);
+      setIsDjLoginOpen(true);
+      return;
+    }
+    setJoinRoomCode(roomCode);
+    setHostToken(effectiveToken);
+    window.history.pushState({}, '', `/dj/${roomCode}`);
+    await loadSessionAsHost(roomCode, effectiveToken);
   };
 
   // Guest Action: Join Session
@@ -242,6 +323,7 @@ export const App: React.FC = () => {
     return (
       <ProjectorScreen
         roomCode={joinRoomCode}
+        hostToken={hostToken}
         onBack={() => {
           setView('landing');
           window.history.pushState({}, '', '/');
@@ -262,7 +344,35 @@ export const App: React.FC = () => {
         onRefreshSession={() => api.getSession(session.roomCode, hostToken).then(setSession)}
         onRefreshQueue={() => refreshQueue(session.roomCode)}
         onUpdatePlaybackState={setPlaybackState}
+        onUpdateQrDataUrl={setQrDataUrl}
+        onNavigateToEvents={() => {
+          setView('events');
+          window.history.pushState({}, '', '/events');
+        }}
         onEndSession={handleEndSession}
+      />
+    );
+  }
+
+  // Render Events Manager View
+  if (view === 'events') {
+    return (
+      <EventsManager
+        onBackToHome={() => {
+          setView('landing');
+          window.history.pushState({}, '', '/');
+        }}
+        onOpenDjDeck={(code, token) => handleOpenDjFromManager(code, token)}
+        onJoinAsGuest={(code) => {
+          setJoinRoomCode(code);
+          setView('landing');
+          window.history.pushState({}, '', `/join/${code}`);
+        }}
+        onOpenProjector={(code) => {
+          setJoinRoomCode(code);
+          setView('projector');
+          window.history.pushState({}, '', `/projector/${code}`);
+        }}
       />
     );
   }
@@ -297,8 +407,31 @@ export const App: React.FC = () => {
           </div>
           <span className="font-black text-2xl tracking-tighter text-white">OwnDJ</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="px-3 py-1 rounded-full bg-dj-surface border border-dj-border text-xs font-mono text-slate-400">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              setDjLoginRoomCode(joinRoomCode || '');
+              setDjLoginPasscode('');
+              setDjLoginError(null);
+              setIsDjLoginOpen(true);
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-xs font-bold text-amber-300 hover:text-white flex items-center gap-1.5 transition-all shadow-sm"
+            title="Log in to DJ Dashboard with Room Code & Passcode"
+          >
+            <Key className="w-3.5 h-3.5 text-amber-400" />
+            <span>DJ Phone Login</span>
+          </button>
+          <button
+            onClick={() => {
+              setView('events');
+              window.history.pushState({}, '', '/events');
+            }}
+            className="px-3.5 py-1.5 rounded-xl bg-dj-surface hover:bg-slate-800 border border-dj-border hover:border-dj-cyan/60 text-xs font-bold text-slate-300 hover:text-white flex items-center gap-2 transition-all shadow-sm"
+          >
+            <Radio className="w-3.5 h-3.5 text-dj-cyan animate-pulse" />
+            <span>Active Events</span>
+          </button>
+          <span className="hidden sm:inline px-3 py-1 rounded-full bg-dj-surface border border-dj-border text-xs font-mono text-slate-400">
             v1.0 • Official YouTube API
           </span>
         </div>
@@ -339,7 +472,7 @@ export const App: React.FC = () => {
                 Control the live music deck, adjust segment lengths, approve or reorder guest requests, and stream via YouTube.
               </p>
 
-              <form onSubmit={handleCreateSession} className="space-y-4 pt-2">
+              <form onSubmit={handleCreateSession} className="space-y-3.5 pt-2">
                 <div>
                   <label className="block text-xs font-mono font-bold text-slate-300 uppercase mb-1">
                     Party / Session Name
@@ -350,14 +483,45 @@ export const App: React.FC = () => {
                     value={partyName}
                     onChange={(e) => setPartyName(e.target.value)}
                     placeholder="e.g. Roof Party 2026"
-                    className="w-full bg-dj-card border border-dj-border rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-dj-cyan"
+                    className="w-full bg-dj-card border border-dj-border rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-dj-cyan"
                   />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-xs font-mono font-bold text-slate-300 uppercase mb-1">
+                      Room Code
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={16}
+                      value={customCodeInput}
+                      onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
+                      placeholder="Auto"
+                      className="w-full bg-dj-card border border-dj-border rounded-xl px-3 py-2.5 text-xs text-white font-mono uppercase tracking-wider focus:outline-none focus:border-dj-cyan"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-mono font-bold text-slate-300 uppercase mb-1 flex items-center gap-1">
+                      <Key className="w-3 h-3 text-amber-400" />
+                      <span>DJ PIN</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={16}
+                      value={createDjPasscode}
+                      onChange={(e) => setCreateDjPasscode(e.target.value.replace(/\s+/g, ''))}
+                      placeholder="1234"
+                      className="w-full bg-dj-card border border-amber-500/40 rounded-xl px-3 py-2.5 text-xs text-white font-mono tracking-wider focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
                 </div>
 
                 <button
                   type="submit"
                   disabled={isCreatingSession}
-                  className="w-full py-3.5 rounded-2xl bg-dj-cyan hover:bg-cyan-400 text-black font-extrabold text-sm tracking-wide shadow-lg glow-cyan flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                  className="w-full py-3.5 rounded-2xl bg-dj-cyan hover:bg-cyan-400 text-black font-extrabold text-sm tracking-wide shadow-lg glow-cyan flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 mt-2"
                 >
                   {isCreatingSession ? 'Setting up deck...' : 'Launch DJ Session'}
                   <ArrowRight className="w-4 h-4" />
@@ -417,7 +581,7 @@ export const App: React.FC = () => {
                   <ArrowRight className="w-4 h-4" />
                 </button>
 
-                <div className="pt-2 text-center">
+                <div className="pt-2 flex flex-col items-center gap-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -434,6 +598,20 @@ export const App: React.FC = () => {
                     <Tv className="w-4 h-4" />
                     Open Projector Screen for this Room
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDjLoginRoomCode(joinRoomCode.trim().toUpperCase());
+                      setDjLoginPasscode('');
+                      setDjLoginError(null);
+                      setIsDjLoginOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-amber-400/90 hover:text-amber-300 transition-colors"
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    Are you the DJ? Enter Passcode to Login
+                  </button>
                 </div>
               </form>
             </div>
@@ -445,6 +623,94 @@ export const App: React.FC = () => {
       <footer className="px-6 py-6 max-w-6xl mx-auto w-full text-center text-xs font-mono text-slate-500 z-10">
         Virtual DJ Web App • Strictly compliant with YouTube Developer Policies (Single active official IFrame player, zero audio extraction).
       </footer>
+
+      {/* DJ Remote Phone Login Modal */}
+      {isDjLoginOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-dj-surface border border-dj-border w-full max-w-md rounded-3xl p-6 shadow-2xl relative animate-fadeIn">
+            <button
+              onClick={() => setIsDjLoginOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-dj-card transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 mb-2">
+              <Smartphone className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-xl font-black text-white">DJ Remote Phone Login</h3>
+            <p className="text-xs text-slate-400 mt-1 mb-4">
+              Enter the Room Code and DJ Passcode to control the live deck, volume, transitions, and queue remotely from your smartphone.
+            </p>
+
+            {djLoginError && (
+              <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                <span>{djLoginError}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleDjLogin(djLoginRoomCode, djLoginPasscode);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-mono font-bold text-slate-300 uppercase mb-1">
+                  Room Code
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={16}
+                  value={djLoginRoomCode}
+                  onChange={(e) => setDjLoginRoomCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. MYPARTY"
+                  className="w-full bg-dj-card border border-dj-border rounded-xl px-4 py-2.5 text-sm text-white font-mono uppercase tracking-wider focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono font-bold text-slate-300 uppercase mb-1 flex items-center justify-between">
+                  <span>DJ Passcode</span>
+                  <span className="text-[10px] text-amber-400 font-normal">Created by Event Manager</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  maxLength={32}
+                  value={djLoginPasscode}
+                  onChange={(e) => setDjLoginPasscode(e.target.value)}
+                  placeholder="e.g. 1234"
+                  className="w-full bg-dj-card border border-dj-border rounded-xl px-4 py-2.5 text-sm text-white font-mono tracking-widest focus:outline-none focus:border-amber-400"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsDjLoginOpen(false)}
+                  className="flex-1 py-3 rounded-xl bg-dj-card border border-dj-border text-slate-300 hover:text-white font-bold text-xs transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isDjLoggingIn || !djLoginRoomCode.trim() || !djLoginPasscode.trim()}
+                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-extrabold text-xs shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                >
+                  {isDjLoggingIn ? 'Authenticating...' : 'Enter DJ Deck'}
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

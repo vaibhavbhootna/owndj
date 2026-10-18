@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { EventDJTrack, SongSearchResult } from '../../types';
 import { api } from '../../services/api';
 import { UniversalSearchModal } from './UniversalSearchModal';
@@ -24,6 +24,9 @@ import {
   X,
   Volume2,
   Youtube,
+  ArrowUp,
+  ArrowDown,
+  Target,
 } from 'lucide-react';
 
 interface DJDeckManagerProps {
@@ -33,6 +36,10 @@ interface DJDeckManagerProps {
   onDeckUpdated: () => void;
   onOpenLibrary: () => void;
   currentTrackId?: string;
+  currentPosition?: number;
+  onSeek?: (seconds: number) => void;
+  defaultSongDurationSeconds?: number;
+  onUpdateDefaultSwitchTime?: (seconds: number) => void;
 }
 
 export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
@@ -42,6 +49,10 @@ export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
   onDeckUpdated,
   onOpenLibrary,
   currentTrackId,
+  currentPosition = 0,
+  onSeek,
+  defaultSongDurationSeconds = 60,
+  onUpdateDefaultSwitchTime,
 }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isUniversalSearchOpen, setIsUniversalSearchOpen] = useState(false);
@@ -55,6 +66,36 @@ export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [activeCueEditId, setActiveCueEditId] = useState<string | null>(null);
   const [cueStartTime, setCueStartTime] = useState<number>(0);
+  const [cueDuration, setCueDuration] = useState<number>(60);
+  const [bulkDurationSuccess, setBulkDurationSuccess] = useState<string | null>(null);
+
+  // Playlist Scroll and Auto-Follow references
+  const playingTrackRef = useRef<HTMLDivElement | null>(null);
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
+  const [autoScrollToPlaying, setAutoScrollToPlaying] = useState(true);
+
+  // Auto-scroll to currently playing track in playlist
+  useEffect(() => {
+    if (autoScrollToPlaying && currentTrackId && playingTrackRef.current) {
+      playingTrackRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+  }, [currentTrackId, autoScrollToPlaying]);
+
+  const scrollToPlayingTrack = () => {
+    if (playingTrackRef.current) {
+      playingTrackRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+  };
+
+  const currentPlayingIndex = deck.findIndex(
+    (t) => t.playbackStatus === 'PLAYING' || currentTrackId === t.id
+  );
 
   // Search songs for adding to deck
   const handleSearch = async (e: React.FormEvent) => {
@@ -117,11 +158,24 @@ export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
     try {
       await api.updateDeckTrack(roomCode, trackId, hostToken, {
         startSeconds: cueStartTime,
+        durationSeconds: cueDuration,
       });
       setActiveCueEditId(null);
       onDeckUpdated();
     } catch (err) {
       console.warn('Failed to update cue point:', err);
+    }
+  };
+
+  const handleApplySwitchTimeToAll = async (durationSecs: number) => {
+    try {
+      await api.setDeckDurationAll(roomCode, hostToken, durationSecs);
+      onUpdateDefaultSwitchTime?.(durationSecs);
+      setBulkDurationSuccess(`Applied ${durationSecs === 0 ? 'Full Song' : `${durationSecs}s`} switch time to all tracks!`);
+      setTimeout(() => setBulkDurationSuccess(null), 3000);
+      onDeckUpdated();
+    } catch (err) {
+      console.warn('Failed to apply duration to all tracks:', err);
     }
   };
 
@@ -321,8 +375,111 @@ export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
         </div>
       )}
 
-      {/* Playlist Tracks List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      {bulkDurationSuccess && (
+        <div className="px-4 py-2 bg-dj-cyan/20 border-b border-dj-cyan text-dj-cyan text-xs font-semibold flex items-center gap-2">
+          <Sparkles className="w-4 h-4" /> {bulkDurationSuccess}
+        </div>
+      )}
+
+      {/* Default Switch Time Toolbar */}
+      <div className="px-4 py-2.5 bg-slate-900/90 border-b border-dj-border flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-slate-300 font-semibold">
+            <Sliders className="w-3.5 h-3.5 text-dj-cyan" />
+            <span>Switch Song in:</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {[30, 45, 60, 90, 120, 0].map((sec) => {
+              const isSelected = defaultSongDurationSeconds === sec;
+              return (
+                <button
+                  key={sec}
+                  type="button"
+                  onClick={() => onUpdateDefaultSwitchTime?.(sec)}
+                  className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold transition-all ${
+                    isSelected
+                      ? 'bg-dj-cyan text-black glow-cyan'
+                      : 'bg-dj-card hover:bg-slate-700 text-slate-300 border border-dj-border'
+                  }`}
+                  title={sec === 0 ? 'Play full song without early cut' : `Auto-transition song after ${sec} seconds`}
+                >
+                  {sec === 0 ? 'Full' : `${sec}s`}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Bulk Apply & Quick Scroll Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          {currentPlayingIndex !== -1 && (
+            <button
+              type="button"
+              onClick={scrollToPlayingTrack}
+              className="px-2.5 py-1 rounded-lg bg-dj-cyan/20 border border-dj-cyan/40 text-dj-cyan hover:bg-dj-cyan hover:text-black text-[11px] font-bold flex items-center gap-1 transition-all glow-cyan"
+              title="Scroll directly to the currently playing song in the playlist"
+            >
+              <Target className="w-3.5 h-3.5 animate-pulse" />
+              <span>Scroll to Playing (#{currentPlayingIndex + 1})</span>
+            </button>
+          )}
+
+          <div className="flex items-center gap-1 bg-black/40 p-0.5 rounded-lg border border-slate-700">
+            <button
+              type="button"
+              onClick={() => listContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              title="Scroll to Top of playlist"
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                listContainerRef.current?.scrollTo({
+                  top: listContainerRef.current.scrollHeight,
+                  behavior: 'smooth',
+                })
+              }
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              title="Scroll to Bottom of playlist"
+            >
+              <ArrowDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setAutoScrollToPlaying(!autoScrollToPlaying)}
+            className={`px-2 py-1 rounded-lg text-[10px] font-mono border transition-all ${
+              autoScrollToPlaying
+                ? 'bg-dj-green/15 text-dj-green border-dj-green/40'
+                : 'bg-slate-800 text-slate-400 border-slate-700'
+            }`}
+            title="Automatically scroll playlist as songs change"
+          >
+            Auto-Follow: {autoScrollToPlaying ? 'ON' : 'OFF'}
+          </button>
+
+          {/* Bulk Apply to all tracks in deck */}
+          <button
+            type="button"
+            onClick={() => handleApplySwitchTimeToAll(defaultSongDurationSeconds || 60)}
+            disabled={deck.length === 0}
+            className="px-2.5 py-1 rounded-lg bg-dj-magenta/20 hover:bg-dj-magenta text-dj-magenta hover:text-white border border-dj-magenta/40 text-[11px] font-bold flex items-center gap-1.5 transition-all shadow disabled:opacity-40"
+            title="Update all tracks currently in this deck to use this switch duration"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Apply {defaultSongDurationSeconds === 0 ? 'Full Song' : `${defaultSongDurationSeconds}s`} to All
+          </button>
+        </div>
+      </div>
+
+      {/* Playlist Tracks List with proper min-h-0 and internal scrollbar */}
+      <div
+        ref={listContainerRef}
+        className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2 scroll-smooth"
+      >
         {deck.length === 0 ? (
           <div className="h-64 flex flex-col items-center justify-center text-center p-6 text-slate-500">
             <ListMusic className="w-12 h-12 text-slate-600 mb-3 stroke-1" />
@@ -352,8 +509,9 @@ export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
 
             return (
               <div
+                ref={isPlaying ? playingTrackRef : undefined}
                 key={track.id}
-                className={`p-3 rounded-xl border transition-all flex items-center gap-3 group relative ${
+                className={`p-3 rounded-xl border transition-all flex flex-col gap-2 group relative ${
                   isPlaying
                     ? 'bg-dj-cyan/15 border-dj-cyan glow-cyan'
                     : isPlayed
@@ -361,135 +519,307 @@ export const DJDeckManager: React.FC<DJDeckManagerProps> = ({
                     : 'bg-dj-card/70 border-dj-border hover:border-slate-500'
                 }`}
               >
-                {/* Track Number & Reorder arrows */}
-                <div className="flex flex-col items-center justify-center text-slate-500 w-6">
-                  <button
-                    onClick={() => handleMoveTrack(idx, 'UP')}
-                    disabled={idx === 0}
-                    className="p-0.5 hover:text-white disabled:opacity-20"
-                  >
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="font-mono text-xs font-bold text-slate-400">
-                    {idx + 1}
-                  </span>
-                  <button
-                    onClick={() => handleMoveTrack(idx, 'DOWN')}
-                    disabled={idx === deck.length - 1}
-                    className="p-0.5 hover:text-white disabled:opacity-20"
-                  >
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Track Details */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-bold text-sm text-white truncate">{track.title}</h4>
-                    {track.isFavorite && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-                    <span className="truncate">{track.artist}</span>
-                    <span>•</span>
-                    <span className="font-mono text-dj-cyan">{formatTime(track.durationSeconds)}</span>
-                    <span>•</span>
-                    <span className="font-mono text-[10px] uppercase px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                      {track.sourceType}
+                <div className="flex items-center gap-3">
+                  {/* Track Number & Reorder arrows */}
+                  <div className="flex flex-col items-center justify-center text-slate-500 w-6">
+                    <button
+                      onClick={() => handleMoveTrack(idx, 'UP')}
+                      disabled={idx === 0}
+                      className="p-0.5 hover:text-white disabled:opacity-20"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="font-mono text-xs font-bold text-slate-400">
+                      {idx + 1}
                     </span>
-                    {track.startSeconds > 0 && (
-                      <span className="font-mono text-[10px] text-dj-magenta bg-dj-magenta/10 px-1.5 py-0.2 rounded border border-dj-magenta/30">
-                        Cue: {formatTime(track.startSeconds)}
+                    <button
+                      onClick={() => handleMoveTrack(idx, 'DOWN')}
+                      disabled={idx === deck.length - 1}
+                      className="p-0.5 hover:text-white disabled:opacity-20"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Track Details */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-sm text-white truncate">{track.title}</h4>
+                      {track.isFavorite && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 flex-shrink-0" />}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
+                      <span className="truncate">{track.artist}</span>
+                      <span>•</span>
+                      <span className="font-mono text-dj-cyan">{formatTime(track.durationSeconds)}</span>
+                      <span>•</span>
+                      <span className="font-mono text-[10px] uppercase px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                        {track.sourceType}
                       </span>
-                    )}
+                      {track.startSeconds > 0 && (
+                        <span className="font-mono text-[10px] text-dj-magenta bg-dj-magenta/10 px-1.5 py-0.2 rounded border border-dj-magenta/30">
+                          Start: {formatTime(track.startSeconds)}
+                        </span>
+                      )}
+                      {track.durationSeconds > 0 && (
+                        <span className="font-mono text-[10px] text-dj-cyan bg-dj-cyan/10 px-1.5 py-0.2 rounded border border-dj-cyan/30">
+                          Switch: {track.durationSeconds}s
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Cue Point Quick Editor */}
-                {activeCueEditId === track.id ? (
-                  <div className="flex items-center gap-1.5 bg-black/60 p-1.5 rounded-xl border border-dj-magenta">
-                    <span className="text-[10px] font-mono text-slate-400">Start:</span>
-                    <input
-                      type="number"
-                      min="0"
-                      max={track.durationSeconds}
-                      value={cueStartTime}
-                      onChange={(e) => setCueStartTime(parseInt(e.target.value, 10) || 0)}
-                      className="w-12 bg-slate-900 text-white font-mono text-xs text-center rounded px-1 py-0.5"
-                    />
-                    <span className="text-[10px] text-slate-400">s</span>
-                    <button
-                      onClick={() => handleSaveCuePoint(track.id)}
-                      className="p-1 rounded bg-dj-magenta text-black hover:scale-105"
-                      title="Save Cue"
-                    >
-                      <Check className="w-3 h-3" />
-                    </button>
-                    <button
-                      onClick={() => setActiveCueEditId(null)}
-                      className="p-1 rounded text-slate-400 hover:text-white"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ) : null}
-
-                {/* Status Badge */}
-                {isPlaying && (
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-dj-cyan text-black animate-pulse flex items-center gap-1">
-                    <Volume2 className="w-3 h-3" /> PLAYING
-                  </span>
-                )}
-                {isPlayed && (
-                  <span className="text-[10px] font-mono text-slate-500 px-2 py-0.5 rounded bg-slate-800">
-                    PLAYED
-                  </span>
-                )}
-
-                {/* Action Buttons */}
-                <div className="flex items-center gap-1">
-                  {/* Favorite Toggle */}
-                  <button
-                    onClick={() => handleToggleFavorite(track)}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 transition-colors"
-                    title="Toggle Favorite"
-                  >
-                    <Star
-                      className={`w-4 h-4 ${track.isFavorite ? 'text-amber-400 fill-amber-400' : ''}`}
-                    />
-                  </button>
-
-                  {/* Cue Point Edit */}
-                  <button
-                    onClick={() => {
-                      setActiveCueEditId(track.id);
-                      setCueStartTime(track.startSeconds || 0);
-                    }}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-dj-magenta transition-colors"
-                    title="Set Starting Cue Timestamp"
-                  >
-                    <Clock className="w-4 h-4" />
-                  </button>
-
-                  {/* Play Now Override */}
-                  {!isPlaying && (
-                    <button
-                      onClick={() => handlePlayNow(track.id)}
-                      className="p-1.5 rounded-lg bg-dj-cyan/20 text-dj-cyan hover:bg-dj-cyan hover:text-black transition-all"
-                      title="Play Track Immediately (Override)"
-                    >
-                      <Play className="w-4 h-4 fill-current" />
-                    </button>
+                  {/* Status Badge */}
+                  {isPlaying && (
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-dj-cyan text-black animate-pulse flex items-center gap-1">
+                      <Volume2 className="w-3 h-3" /> PLAYING
+                    </span>
+                  )}
+                  {isPlayed && (
+                    <span className="text-[10px] font-mono text-slate-500 px-2 py-0.5 rounded bg-slate-800">
+                      PLAYED
+                    </span>
                   )}
 
-                  {/* Remove Track */}
-                  <button
-                    onClick={() => handleRemoveTrack(track.id)}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
-                    title="Remove from Deck"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-1">
+                    {/* Favorite Toggle */}
+                    <button
+                      onClick={() => handleToggleFavorite(track)}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 transition-colors"
+                      title="Toggle Favorite"
+                    >
+                      <Star
+                        className={`w-4 h-4 ${track.isFavorite ? 'text-amber-400 fill-amber-400' : ''}`}
+                      />
+                    </button>
+
+                    {/* Cue Point & Switch Duration Edit */}
+                    <button
+                      onClick={() => {
+                        if (activeCueEditId === track.id) {
+                          setActiveCueEditId(null);
+                        } else {
+                          setActiveCueEditId(track.id);
+                          setCueStartTime(track.startSeconds || 0);
+                          setCueDuration(track.durationSeconds || defaultSongDurationSeconds || 60);
+                        }
+                      }}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        activeCueEditId === track.id
+                          ? 'bg-dj-magenta text-black shadow'
+                          : 'text-slate-500 hover:text-dj-magenta'
+                      }`}
+                      title="Set Cue Points & Switch Duration"
+                    >
+                      <Clock className="w-4 h-4" />
+                    </button>
+
+                    {/* Play Now Override */}
+                    {!isPlaying && (
+                      <button
+                        onClick={() => handlePlayNow(track.id)}
+                        className="p-1.5 rounded-lg bg-dj-cyan/20 text-dj-cyan hover:bg-dj-cyan hover:text-black transition-all"
+                        title="Play Track Immediately (Override)"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                      </button>
+                    )}
+
+                    {/* Remove Track */}
+                    <button
+                      onClick={() => handleRemoveTrack(track.id)}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
+                      title="Remove from Deck"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
+
+                {/* Mini Interactive Timeline Scrub Bar when playing */}
+                {isPlaying && (
+                  <div className="mt-1 pt-2 border-t border-dj-cyan/20 flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-mono">
+                      <div className="flex items-center gap-1.5 text-dj-cyan font-bold">
+                        <Volume2 className="w-3.5 h-3.5 animate-pulse text-dj-cyan" />
+                        <span>Scrub: {formatTime(currentPosition)}</span>
+                        <span className="text-slate-600">/</span>
+                        <span className="text-slate-400">{formatTime(track.durationSeconds || 180)}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-sans">Click bar to seek</span>
+                    </div>
+
+                    <div
+                      onClick={(e) => {
+                        if (!onSeek) return;
+                        const total = track.durationSeconds || 180;
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                        const seekSec = Math.floor(clickRatio * total);
+                        onSeek(seekSec);
+                      }}
+                      className="relative w-full h-2.5 bg-slate-950 rounded-full cursor-pointer overflow-hidden border border-slate-700 hover:border-dj-cyan transition-all"
+                      title="Click or drag to scrub playing track"
+                    >
+                      <div
+                        className="absolute top-0 bottom-0 left-0 bg-gradient-to-r from-dj-cyan to-dj-magenta rounded-full"
+                        style={{
+                          width: `${Math.min(100, Math.max(0, (currentPosition / (track.durationSeconds || 180)) * 100))}%`,
+                        }}
+                      />
+                      {track.startSeconds > 0 && (
+                        <div
+                          className="absolute top-0 bottom-0 w-1 bg-dj-green shadow z-10"
+                          style={{
+                            left: `${Math.min(100, Math.max(0, (track.startSeconds / (track.durationSeconds || 180)) * 100))}%`,
+                          }}
+                          title={`Cue Start: ${formatTime(track.startSeconds)}`}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Expanded Cue & Switch Duration Editor */}
+                {activeCueEditId === track.id && (
+                  <div className="mt-1 pt-2.5 border-t border-dj-magenta/30 bg-black/50 rounded-xl p-3 flex flex-col gap-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-dj-magenta flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" /> Cue & Switch Editor
+                        </span>
+                        {isPlaying && currentPosition > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setCueStartTime(Math.floor(currentPosition))}
+                            className="px-2 py-0.5 rounded bg-dj-cyan/20 border border-dj-cyan/40 text-dj-cyan text-[11px] font-semibold hover:bg-dj-cyan hover:text-black transition-all"
+                            title="Set Start Cue to current playing position"
+                          >
+                            🎯 Set Start to Playhead ({formatTime(currentPosition)})
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs font-mono">
+                        <span className="text-slate-400">Play Segment:</span>
+                        <span className="text-dj-magenta font-bold">{formatTime(cueStartTime)}</span>
+                        <span className="text-slate-500">→</span>
+                        <span className="text-dj-cyan font-bold">{formatTime(cueStartTime + (cueDuration > 0 ? cueDuration : 60))}</span>
+                      </div>
+                    </div>
+
+                    {/* Visual Timeline Scrub & Cue Selector in Editor */}
+                    <div className="flex flex-col gap-1 bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+                      <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                        <span>Click timeline to scrub & set cue point:</span>
+                        <span className="text-dj-magenta font-semibold">Start: {formatTime(cueStartTime)} ({cueStartTime}s)</span>
+                      </div>
+                      <div
+                        onClick={(e) => {
+                          const total = track.durationSeconds || 180;
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                          const targetSec = Math.floor(ratio * total);
+                          setCueStartTime(targetSec);
+                          if (onSeek) onSeek(targetSec);
+                        }}
+                        className="relative w-full h-3 bg-slate-900 rounded-full cursor-pointer overflow-hidden border border-slate-700 hover:border-dj-magenta transition-all"
+                        title="Click to scrub to this second and set as Start Cue"
+                      >
+                        {/* Cue Segment preview */}
+                        <div
+                          className="absolute top-0 bottom-0 bg-dj-magenta/30 border-x border-dj-magenta"
+                          style={{
+                            left: `${Math.min(100, Math.max(0, (cueStartTime / (track.durationSeconds || 180)) * 100))}%`,
+                            width: `${Math.min(100 - (cueStartTime / (track.durationSeconds || 180)) * 100, Math.max(2, (cueDuration / (track.durationSeconds || 180)) * 100))}%`,
+                          }}
+                        />
+                        {/* Current playhead indicator */}
+                        {isPlaying && (
+                          <div
+                            className="absolute top-0 bottom-0 w-1.5 bg-dj-cyan z-10 rounded-full shadow"
+                            style={{
+                              left: `${Math.min(100, Math.max(0, (currentPosition / (track.durationSeconds || 180)) * 100))}%`,
+                            }}
+                            title={`Playhead: ${formatTime(currentPosition)}`}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Start Time input */}
+                      <div className="flex items-center gap-1.5 bg-slate-900/80 px-2 py-1 rounded-lg border border-slate-700">
+                        <span className="text-[11px] text-slate-400 font-semibold">Start:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max={track.durationSeconds || 3600}
+                          value={cueStartTime}
+                          onChange={(e) => setCueStartTime(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          className="w-16 bg-slate-950 text-white font-mono text-xs text-center rounded px-1.5 py-0.5 border border-slate-700"
+                        />
+                        <span className="text-[11px] text-slate-400 font-mono">s</span>
+                      </div>
+
+                      {/* Switch / Duration presets */}
+                      <div className="flex items-center gap-1.5 bg-slate-900/80 px-2 py-1 rounded-lg border border-slate-700">
+                        <span className="text-[11px] text-slate-400 font-semibold">Switch in:</span>
+                        <div className="flex items-center gap-1">
+                          {[30, 45, 60, 90, 120].map((sec) => (
+                            <button
+                              key={sec}
+                              type="button"
+                              onClick={() => setCueDuration(sec)}
+                              className={`px-1.5 py-0.5 rounded text-[11px] font-mono font-bold transition-all ${
+                                cueDuration === sec
+                                  ? 'bg-dj-magenta text-white shadow'
+                                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                              }`}
+                            >
+                              {sec}s
+                            </button>
+                          ))}
+                          <input
+                            type="number"
+                            min="5"
+                            value={cueDuration}
+                            onChange={(e) => setCueDuration(Math.max(5, parseInt(e.target.value, 10) || 60))}
+                            className="w-14 bg-slate-950 text-white font-mono text-xs text-center rounded px-1.5 py-0.5 border border-slate-700"
+                          />
+                          <span className="text-[11px] text-slate-400 font-mono">s</span>
+                        </div>
+                      </div>
+
+                      {/* Audition & Action buttons */}
+                      <div className="flex items-center gap-2 ml-auto">
+                        {onSeek && (
+                          <button
+                            type="button"
+                            onClick={() => onSeek(cueStartTime)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1"
+                            title="Seek YouTube player to start cue"
+                          >
+                            <Play className="w-3 h-3 fill-current" /> Audition Start
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleSaveCuePoint(track.id)}
+                          className="px-3 py-1 rounded-lg bg-dj-magenta text-black text-xs font-bold flex items-center gap-1 hover:scale-105 transition-all shadow-md"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Save Cue
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveCueEditId(null)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-white"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })

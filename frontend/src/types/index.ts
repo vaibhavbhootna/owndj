@@ -15,6 +15,7 @@ export interface SessionSettings {
   allowRepeatedSongs: boolean;
   djDeterminesDuration: boolean;
   autoAdvance: boolean;
+  requestTransitionDelaySeconds?: number;
 }
 
 export interface Session {
@@ -48,6 +49,14 @@ export interface Session {
   customScreenLayout?: 'SPLIT' | 'BACKGROUND' | 'CENTER';
   customScreenShowQr?: boolean;
   customScreenShowNowPlaying?: boolean;
+  customScreenImageFit?: 'cover' | 'contain';
+  customScreenImageScale?: number;
+  customScreenImageRotate?: number;
+  customScreenImagePosX?: number;
+  customScreenImagePosY?: number;
+  customScreenImageBrightness?: number;
+  customScreenImageContrast?: number;
+  customScreenImageBorder?: 'none' | 'neon' | 'gold' | 'glass';
 
   // DJ Deck State
   currentDjTrackIndex?: number;
@@ -55,6 +64,7 @@ export interface Session {
   deckShuffle?: boolean;
   guestRequestsPaused?: boolean;
   requestCooldownSeconds?: number;
+  djPasscode?: string;
 }
 
 export interface ProjectorCustomScreen {
@@ -65,6 +75,14 @@ export interface ProjectorCustomScreen {
   customScreenLayout?: 'SPLIT' | 'BACKGROUND' | 'CENTER';
   customScreenShowQr?: boolean;
   customScreenShowNowPlaying?: boolean;
+  customScreenImageFit?: 'cover' | 'contain';
+  customScreenImageScale?: number;
+  customScreenImageRotate?: number;
+  customScreenImagePosX?: number;
+  customScreenImagePosY?: number;
+  customScreenImageBrightness?: number;
+  customScreenImageContrast?: number;
+  customScreenImageBorder?: 'none' | 'neon' | 'gold' | 'glass';
   activateImmediately?: boolean;
 }
 
@@ -97,6 +115,19 @@ export interface SongSearchResult {
   embeddable: boolean;
   artist?: string;
   sourceType?: SourceType;
+}
+
+export interface ResolveSongItem {
+  id: string;
+  originalInput: string;
+  parsedQuery: string;
+  inputType: 'SEARCH_URL' | 'DIRECT_VIDEO' | 'QUERY';
+  status: 'AUTO_RESOLVED' | 'NEEDS_SELECTION' | 'NO_MATCH';
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  selectedMatch: SongSearchResult | null;
+  candidates: SongSearchResult[];
+  notes?: string;
+  userSelected?: boolean;
 }
 
 export interface SongRequest {
@@ -229,7 +260,7 @@ export interface PlaybackState {
   autoAdvance: boolean;
   transitionId?: string;
   errorMessage?: string;
-  playlistSource?: 'GUEST_REQUEST' | 'DJ_DECK';
+  playlistSource?: 'GUEST_REQUEST' | 'DJ_DECK' | 'DJ_LIBRARY_SINGLE';
   djDeckTrackId?: string;
   activeVisualPreset?: ProjectionPreset;
   tickerText?: string;

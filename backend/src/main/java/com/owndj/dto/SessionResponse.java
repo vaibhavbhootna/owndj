@@ -19,7 +19,8 @@ public class SessionResponse {
     private String roomCode;
     private String name;
     private SessionStatus status;
-    private String hostToken; // only present on session creation
+    private String hostToken; // only present on session creation or dj-login
+    private String djPasscode;
     private SessionSettings settings;
     private long guestCount;
     private SongRequestDto currentTrack;
@@ -45,6 +46,14 @@ public class SessionResponse {
     private String customScreenLayout;
     private boolean customScreenShowQr;
     private boolean customScreenShowNowPlaying;
+    private String customScreenImageFit;
+    private int customScreenImageScale;
+    private int customScreenImageRotate;
+    private int customScreenImagePosX;
+    private int customScreenImagePosY;
+    private int customScreenImageBrightness;
+    private int customScreenImageContrast;
+    private String customScreenImageBorder;
 
     // DJ Deck state
     private int currentDjTrackIndex;

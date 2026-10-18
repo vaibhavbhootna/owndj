@@ -53,6 +53,14 @@ public class PlaylistExportImportController {
         return ResponseEntity.ok(exportImportService.importIntoDjLibrary(name, content, format));
     }
 
+    @PostMapping("/dj/playlists/import-resolved")
+    public ResponseEntity<DJPlaylistDto> importResolvedIntoLibrary(
+            @RequestBody Map<String, Object> payload) {
+        String name = (String) payload.get("name");
+        List<Map<String, Object>> tracks = (List<Map<String, Object>>) payload.get("tracks");
+        return ResponseEntity.ok(exportImportService.importResolvedIntoLibrary(name, tracks));
+    }
+
     @PostMapping("/sessions/{roomCode}/import/deck")
     public ResponseEntity<List<EventDJTrackDto>> importIntoDeck(
             @PathVariable String roomCode,

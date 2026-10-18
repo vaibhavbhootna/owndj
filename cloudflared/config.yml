@@ -1,0 +1,13 @@
+# ==========================================================
+# Cloudflare Tunnel Configuration for OwnDJ
+# Tunnel Name: owndj
+# Tunnel ID:   7abe066f-121e-4158-aef8-05f529fddb04
+# ==========================================================
+
+tunnel: 7abe066f-121e-4158-aef8-05f529fddb04
+credentials-file: /Users/gunjan/.cloudflared/7abe066f-121e-4158-aef8-05f529fddb04.json
+
+ingress:
+  # Route all incoming requests to OwnDJ Frontend on port 5173
+  # (Frontend Nginx automatically proxies /api and /ws WebSockets to backend)
+  - service: http://localhost:5173

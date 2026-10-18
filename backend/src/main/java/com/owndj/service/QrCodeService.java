@@ -20,7 +20,18 @@ public class QrCodeService {
     }
 
     public String generateJoinUrl(String roomCode) {
-        return frontendUrl + "/join/" + roomCode;
+        return generateJoinUrl(frontendUrl, roomCode);
+    }
+
+    public String generateJoinUrl(String baseUrl, String roomCode) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return generateJoinUrl(roomCode);
+        }
+        String cleanBase = baseUrl.trim();
+        while (cleanBase.endsWith("/")) {
+            cleanBase = cleanBase.substring(0, cleanBase.length() - 1);
+        }
+        return cleanBase + "/join/" + roomCode;
     }
 
     public byte[] generateQrCodePng(String text, int width, int height) {

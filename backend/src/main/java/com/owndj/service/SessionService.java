@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,23 +34,41 @@ public class SessionService {
     @Transactional
     public SessionResponse createSession(CreateSessionRequest request) {
         String roomCode;
-        int attempts = 0;
-        do {
-            roomCode = tokenService.generateRoomCode(codeLength);
-            attempts++;
-            if (attempts > 10) {
-                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not generate unique room code");
+        if (request.getCustomRoomCode() != null && !request.getCustomRoomCode().isBlank()) {
+            String sanitized = request.getCustomRoomCode().trim().toUpperCase().replaceAll("[^A-Z0-9_-]", "");
+            if (sanitized.length() < 3 || sanitized.length() > 16) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Custom room code must be between 3 and 16 characters (letters, numbers, hyphens, underscores)");
             }
-        } while (sessionRepository.existsByRoomCodeIgnoreCase(roomCode));
+            if (sessionRepository.existsByRoomCodeIgnoreCase(sanitized)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Room code '" + sanitized + "' is already in use. Please choose another code.");
+            }
+            roomCode = sanitized;
+        } else {
+            int attempts = 0;
+            do {
+                roomCode = tokenService.generateRoomCode(codeLength);
+                attempts++;
+                if (attempts > 10) {
+                    throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not generate unique room code");
+                }
+            } while (sessionRepository.existsByRoomCodeIgnoreCase(roomCode));
+        }
 
         String plainHostToken = tokenService.generateSecureToken(32);
         String hostTokenHash = tokenService.hashToken(plainHostToken);
+
+        String passcode = request.getDjPasscode();
+        if (passcode == null || passcode.isBlank()) {
+            passcode = "1234";
+        }
 
         Session session = Session.builder()
                 .roomCode(roomCode)
                 .name(request.getName().trim())
                 .status(SessionStatus.CREATED)
                 .hostSessionTokenHash(hostTokenHash)
+                .hostSessionToken(plainHostToken)
+                .djPasscode(passcode.trim())
                 .createdAt(Instant.now())
                 .build();
         session.setSettings(new SessionSettings());
@@ -61,9 +80,49 @@ public class SessionService {
     }
 
     @Transactional(readOnly = true)
+    public List<SessionResponse> getAllSessions(boolean activeOnly) {
+        List<Session> sessions;
+        if (activeOnly) {
+            sessions = sessionRepository.findByStatusInOrderByCreatedAtDesc(
+                    List.of(SessionStatus.CREATED, SessionStatus.ACTIVE, SessionStatus.PAUSED)
+            );
+        } else {
+            sessions = sessionRepository.findAllByOrderByCreatedAtDesc();
+        }
+        return sessions.stream()
+                .map(s -> mapToResponse(s, null, null))
+                .toList();
+    }
+
+    @Transactional
+    public SessionResponse closeSession(String roomCode, String hostToken) {
+        Session session = findSessionByRoomCode(roomCode);
+        if (hostToken != null && !hostToken.isBlank()) {
+            validateHostToken(session, hostToken);
+        }
+        session.setStatus(SessionStatus.ENDED);
+        session.setEndedAt(Instant.now());
+        session = sessionRepository.save(session);
+        notificationService.broadcast(roomCode, "SESSION_STATUS_CHANGED", SessionStatus.ENDED);
+        log.info("Session {} ({}) ended via closeSession", session.getRoomCode(), session.getId());
+        return mapToResponse(session, hostToken, null);
+    }
+
+    @Transactional
+    public void deleteSession(String roomCode, String hostToken) {
+        Session session = findSessionByRoomCode(roomCode);
+        if (hostToken != null && !hostToken.isBlank()) {
+            validateHostToken(session, hostToken);
+        }
+        sessionRepository.delete(session);
+        notificationService.broadcast(roomCode, "SESSION_DELETED", roomCode);
+        log.info("Session {} ({}) deleted", session.getRoomCode(), session.getId());
+    }
+
+    @Transactional(readOnly = true)
     public SessionResponse getSessionByRoomCode(String roomCode, String hostToken) {
         Session session = findSessionByRoomCode(roomCode);
-        boolean isHost = hostToken != null && tokenService.verifyToken(hostToken, session.getHostSessionTokenHash());
+        boolean isHost = isHost(session, hostToken);
         return mapToResponse(session, isHost ? hostToken : null, null);
     }
 
@@ -135,10 +194,40 @@ public class SessionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Session not found for room code: " + roomCode));
     }
 
+    public boolean isHost(Session session, String hostToken) {
+        if (hostToken == null || hostToken.isBlank()) {
+            return false;
+        }
+        boolean validOriginal = tokenService.verifyToken(hostToken, session.getHostSessionTokenHash());
+        boolean validPlain = session.getHostSessionToken() != null && session.getHostSessionToken().equals(hostToken);
+        boolean validPasscode = session.getDjPasscode() != null && !session.getDjPasscode().isBlank()
+                && session.getDjPasscode().equalsIgnoreCase(hostToken.trim());
+        return validOriginal || validPlain || validPasscode;
+    }
+
     public void validateHostToken(Session session, String hostToken) {
-        if (hostToken == null || !tokenService.verifyToken(hostToken, session.getHostSessionTokenHash())) {
+        if (!isHost(session, hostToken)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid host authorization token");
         }
+    }
+
+    @Transactional(readOnly = true)
+    public SessionResponse djLogin(String roomCode, String passcode) {
+        Session session = findSessionByRoomCode(roomCode);
+        if (passcode == null || passcode.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DJ passcode is required");
+        }
+        String trimmed = passcode.trim();
+        boolean match = (session.getDjPasscode() != null && session.getDjPasscode().equalsIgnoreCase(trimmed))
+                || tokenService.verifyToken(trimmed, session.getHostSessionTokenHash())
+                || (session.getHostSessionToken() != null && session.getHostSessionToken().equals(trimmed));
+
+        if (!match) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid DJ passcode. Please check with the event manager.");
+        }
+
+        String effectiveToken = session.getHostSessionToken() != null ? session.getHostSessionToken() : session.getDjPasscode();
+        return mapToResponse(session, effectiveToken, null);
     }
 
     public Guest validateGuestToken(Session session, String guestToken) {
@@ -177,10 +266,19 @@ public class SessionService {
         if (dto.getCustomScreenLayout() != null) session.setCustomScreenLayout(dto.getCustomScreenLayout());
         if (dto.getCustomScreenShowQr() != null) session.setCustomScreenShowQr(dto.getCustomScreenShowQr());
         if (dto.getCustomScreenShowNowPlaying() != null) session.setCustomScreenShowNowPlaying(dto.getCustomScreenShowNowPlaying());
+        if (dto.getCustomScreenImageFit() != null) session.setCustomScreenImageFit(dto.getCustomScreenImageFit());
+        if (dto.getCustomScreenImageScale() != null) session.setCustomScreenImageScale(dto.getCustomScreenImageScale());
+        if (dto.getCustomScreenImageRotate() != null) session.setCustomScreenImageRotate(dto.getCustomScreenImageRotate());
+        if (dto.getCustomScreenImagePosX() != null) session.setCustomScreenImagePosX(dto.getCustomScreenImagePosX());
+        if (dto.getCustomScreenImagePosY() != null) session.setCustomScreenImagePosY(dto.getCustomScreenImagePosY());
+        if (dto.getCustomScreenImageBrightness() != null) session.setCustomScreenImageBrightness(dto.getCustomScreenImageBrightness());
+        if (dto.getCustomScreenImageContrast() != null) session.setCustomScreenImageContrast(dto.getCustomScreenImageContrast());
+        if (dto.getCustomScreenImageBorder() != null) session.setCustomScreenImageBorder(dto.getCustomScreenImageBorder());
         if (dto.getDeckRepeat() != null) session.setDeckRepeat(dto.getDeckRepeat());
         if (dto.getDeckShuffle() != null) session.setDeckShuffle(dto.getDeckShuffle());
         if (dto.getGuestRequestsPaused() != null) session.setGuestRequestsPaused(dto.getGuestRequestsPaused());
         if (dto.getRequestCooldownSeconds() != null) session.setRequestCooldownSeconds(dto.getRequestCooldownSeconds());
+        if (dto.getDjPasscode() != null && !dto.getDjPasscode().isBlank()) session.setDjPasscode(dto.getDjPasscode().trim());
 
         session = sessionRepository.save(session);
         SessionResponse response = mapToResponse(session, hostToken, null);
@@ -190,12 +288,14 @@ public class SessionService {
 
     public SessionResponse mapToResponse(Session session, String hostToken, SongRequestDto currentTrack) {
         long guestCount = guestRepository.countBySessionId(session.getId());
+        boolean isHost = hostToken != null && !hostToken.isBlank();
         return SessionResponse.builder()
                 .id(session.getId())
                 .roomCode(session.getRoomCode())
                 .name(session.getName())
                 .status(session.getStatus())
                 .hostToken(hostToken)
+                .djPasscode(isHost ? session.getDjPasscode() : null)
                 .settings(session.getSettings())
                 .guestCount(guestCount)
                 .currentTrack(currentTrack)
@@ -219,6 +319,14 @@ public class SessionService {
                 .customScreenLayout(session.getCustomScreenLayout() != null ? session.getCustomScreenLayout() : "SPLIT")
                 .customScreenShowQr(session.getCustomScreenShowQr() != null ? session.getCustomScreenShowQr() : true)
                 .customScreenShowNowPlaying(session.getCustomScreenShowNowPlaying() != null ? session.getCustomScreenShowNowPlaying() : true)
+                .customScreenImageFit(session.getCustomScreenImageFit() != null ? session.getCustomScreenImageFit() : "cover")
+                .customScreenImageScale(session.getCustomScreenImageScale() != null ? session.getCustomScreenImageScale() : 100)
+                .customScreenImageRotate(session.getCustomScreenImageRotate() != null ? session.getCustomScreenImageRotate() : 0)
+                .customScreenImagePosX(session.getCustomScreenImagePosX() != null ? session.getCustomScreenImagePosX() : 50)
+                .customScreenImagePosY(session.getCustomScreenImagePosY() != null ? session.getCustomScreenImagePosY() : 50)
+                .customScreenImageBrightness(session.getCustomScreenImageBrightness() != null ? session.getCustomScreenImageBrightness() : 100)
+                .customScreenImageContrast(session.getCustomScreenImageContrast() != null ? session.getCustomScreenImageContrast() : 100)
+                .customScreenImageBorder(session.getCustomScreenImageBorder() != null ? session.getCustomScreenImageBorder() : "neon")
                 .currentDjTrackIndex(session.getCurrentDjTrackIndex() != null ? session.getCurrentDjTrackIndex() : 0)
                 .deckRepeat(session.getDeckRepeat() != null ? session.getDeckRepeat() : true)
                 .deckShuffle(session.getDeckShuffle() != null ? session.getDeckShuffle() : false)

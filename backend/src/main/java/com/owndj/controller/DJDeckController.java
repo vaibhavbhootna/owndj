@@ -59,6 +59,15 @@ public class DJDeckController {
         return ResponseEntity.ok(djDeckService.reorderDeck(roomCode, hostToken, trackIds));
     }
 
+    @PostMapping("/duration-all")
+    public ResponseEntity<List<EventDJTrackDto>> setAllTracksDuration(
+            @PathVariable String roomCode,
+            @RequestHeader("X-Host-Token") String hostToken,
+            @RequestBody Map<String, Integer> body) {
+        int duration = body.getOrDefault("durationSeconds", 60);
+        return ResponseEntity.ok(djDeckService.setAllTracksDuration(roomCode, hostToken, duration));
+    }
+
     @PostMapping("/load-playlist")
     public ResponseEntity<List<EventDJTrackDto>> loadPlaylist(
             @PathVariable String roomCode,
@@ -92,6 +101,14 @@ public class DJDeckController {
         return ResponseEntity.ok(playbackService.playSpecificDjTrack(roomCode, hostToken, trackId));
     }
 
+    @PostMapping("/play-library-track/{playlistTrackId}")
+    public ResponseEntity<PlaybackStateDto> playLibraryTrack(
+            @PathVariable String roomCode,
+            @PathVariable String playlistTrackId,
+            @RequestHeader("X-Host-Token") String hostToken) {
+        return ResponseEntity.ok(playbackService.playSinglePlaylistTrack(roomCode, hostToken, playlistTrackId));
+    }
+
     @PostMapping("/import-youtube-playlist")
     public ResponseEntity<List<EventDJTrackDto>> importYouTubePlaylist(
             @PathVariable String roomCode,
@@ -110,6 +127,16 @@ public class DJDeckController {
         String csvContent = (String) payload.get("csvContent");
         boolean replaceExisting = Boolean.TRUE.equals(payload.get("replaceExisting"));
         return ResponseEntity.ok(djDeckService.importYouTubeCsv(roomCode, hostToken, csvContent, replaceExisting));
+    }
+
+    @PostMapping("/import-resolved")
+    public ResponseEntity<List<EventDJTrackDto>> importResolved(
+            @PathVariable String roomCode,
+            @RequestHeader("X-Host-Token") String hostToken,
+            @RequestBody Map<String, Object> payload) {
+        List<Map<String, Object>> tracks = (List<Map<String, Object>>) payload.get("tracks");
+        boolean replaceExisting = Boolean.TRUE.equals(payload.get("replaceExisting"));
+        return ResponseEntity.ok(djDeckService.importResolvedTracks(roomCode, hostToken, tracks, replaceExisting));
     }
 
     @GetMapping("/universal-search")

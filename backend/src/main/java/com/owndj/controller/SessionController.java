@@ -5,6 +5,7 @@ import com.owndj.model.SessionSettings;
 import com.owndj.model.SessionStatus;
 import com.owndj.service.QrCodeService;
 import com.owndj.service.SessionService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -25,10 +26,32 @@ public class SessionController {
     private final QrCodeService qrCodeService;
     private final EventPlaybackHistoryRepository historyRepository;
 
+    @GetMapping
+    public ResponseEntity<List<SessionResponse>> getAllSessions(
+            @RequestParam(required = false, defaultValue = "false") boolean activeOnly) {
+        return ResponseEntity.ok(sessionService.getAllSessions(activeOnly));
+    }
+
     @PostMapping
     public ResponseEntity<SessionResponse> createSession(@Valid @RequestBody CreateSessionRequest request) {
         SessionResponse response = sessionService.createSession(request);
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{roomCode}/close")
+    public ResponseEntity<SessionResponse> closeSession(
+            @PathVariable String roomCode,
+            @RequestHeader(value = "X-Host-Token", required = false) String hostToken) {
+        SessionResponse response = sessionService.closeSession(roomCode, hostToken);
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/{roomCode}")
+    public ResponseEntity<Map<String, String>> deleteSession(
+            @PathVariable String roomCode,
+            @RequestHeader(value = "X-Host-Token", required = false) String hostToken) {
+        sessionService.deleteSession(roomCode, hostToken);
+        return ResponseEntity.ok(Map.of("message", "Session " + roomCode + " deleted successfully"));
     }
 
     @GetMapping("/{roomCode}")
@@ -36,6 +59,15 @@ public class SessionController {
             @PathVariable String roomCode,
             @RequestHeader(value = "X-Host-Token", required = false) String hostToken) {
         SessionResponse response = sessionService.getSessionByRoomCode(roomCode, hostToken);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{roomCode}/dj-login")
+    public ResponseEntity<SessionResponse> djLogin(
+            @PathVariable String roomCode,
+            @RequestBody Map<String, String> body) {
+        String passcode = body.getOrDefault("passcode", "");
+        SessionResponse response = sessionService.djLogin(roomCode, passcode);
         return ResponseEntity.ok(response);
     }
 
@@ -67,10 +99,41 @@ public class SessionController {
     }
 
     @GetMapping("/{roomCode}/qrcode")
-    public ResponseEntity<Map<String, String>> getQrCodeDataUrl(@PathVariable String roomCode) {
-        String joinUrl = qrCodeService.generateJoinUrl(roomCode);
-        String dataUrl = qrCodeService.generateQrCodeDataUrl(joinUrl, 300, 300);
-        return ResponseEntity.ok(Map.of("roomCode", roomCode, "joinUrl", joinUrl, "qrCodeDataUrl", dataUrl));
+    public ResponseEntity<Map<String, String>> getQrCodeDataUrl(
+            @PathVariable String roomCode,
+            @RequestParam(required = false) String origin,
+            @RequestParam(required = false, defaultValue = "join") String type,
+            @RequestParam(required = false) String passcode,
+            HttpServletRequest request) {
+        String baseUrl = (origin != null && !origin.isBlank()) ? origin.trim() : null;
+        if (baseUrl == null) {
+            String forwardedHost = request.getHeader("X-Forwarded-Host");
+            if (forwardedHost == null || forwardedHost.isBlank()) {
+                forwardedHost = request.getHeader("Host");
+            }
+            if (forwardedHost != null && !forwardedHost.isBlank()
+                    && !forwardedHost.startsWith("localhost")
+                    && !forwardedHost.startsWith("127.0.0.1")
+                    && !forwardedHost.startsWith("backend")) {
+                String forwardedProto = request.getHeader("X-Forwarded-Proto");
+                String proto = (forwardedProto != null && !forwardedProto.isBlank()) ? forwardedProto : "https";
+                baseUrl = proto + "://" + forwardedHost;
+            }
+        }
+
+        String targetUrl;
+        if ("dj".equalsIgnoreCase(type)) {
+            String cleanBase = (baseUrl != null && !baseUrl.isBlank()) ? baseUrl.replaceAll("/+$", "") : "http://localhost:5173";
+            targetUrl = cleanBase + "/dj/" + roomCode;
+            if (passcode != null && !passcode.isBlank()) {
+                targetUrl += "?passcode=" + passcode.trim();
+            }
+        } else {
+            targetUrl = qrCodeService.generateJoinUrl(baseUrl, roomCode);
+        }
+
+        String dataUrl = qrCodeService.generateQrCodeDataUrl(targetUrl, 300, 300);
+        return ResponseEntity.ok(Map.of("roomCode", roomCode, "joinUrl", targetUrl, "qrCodeDataUrl", dataUrl));
     }
 
     @PatchMapping("/{roomCode}/event")

@@ -47,15 +47,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* Default Playback Duration */}
           <div>
             <label className="block text-xs font-mono font-bold text-slate-300 uppercase mb-2 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-dj-cyan" /> Default Song Segment Duration
+              <Clock className="w-4 h-4 text-dj-cyan" /> Default Song Switch / Segment Duration
             </label>
-            <div className="grid grid-cols-4 gap-2">
-              {[30, 45, 60, 0].map((dur) => (
+            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+              {[30, 45, 60, 90, 120, 180, 0].map((dur) => (
                 <button
                   type="button"
                   key={dur}
                   onClick={() => setForm({ ...form, defaultSongDurationSeconds: dur })}
-                  className={`py-2.5 rounded-xl font-mono text-xs font-bold border transition-all ${form.defaultSongDurationSeconds === dur
+                  className={`py-2 rounded-xl font-mono text-xs font-bold border transition-all ${form.defaultSongDurationSeconds === dur
                       ? 'bg-dj-cyan text-black border-dj-cyan glow-cyan'
                       : 'bg-dj-card text-slate-300 border-dj-border hover:border-slate-500'
                     }`}
@@ -64,6 +64,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               ))}
             </div>
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              Songs will automatically transition after this duration (e.g. switch every 60s or 90s for party sets).
+            </p>
           </div>
 
           {/* Transition Duration */}

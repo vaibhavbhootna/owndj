@@ -41,4 +41,7 @@ public class SessionSettings {
 
     @Builder.Default
     private boolean autoAdvance = true;
+
+    @Builder.Default
+    private int requestTransitionDelaySeconds = 15; // 0 (immediate), 10, 15, 20, 30
 }

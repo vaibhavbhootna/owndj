@@ -2,14 +2,19 @@ package com.owndj.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.owndj.dto.ResolveSongItemDto;
 import com.owndj.dto.SongSearchResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.regex.Matcher;
@@ -141,7 +146,13 @@ public class YouTubeService {
 
         String trimmedQuery = query.trim();
 
-        // Check if query is a direct YouTube video ID or link
+        // 1. If query is a YouTube search URL (e.g. results?search_query=...), extract the query keywords
+        String searchParamQuery = extractSearchQuery(trimmedQuery);
+        if (searchParamQuery != null && !searchParamQuery.isBlank()) {
+            trimmedQuery = searchParamQuery;
+        }
+
+        // 2. Check if query is a direct YouTube video ID or link
         String directVideoId = extractVideoId(trimmedQuery);
         if (directVideoId != null && !apiKey.isBlank()) {
             SongSearchResult directResult = fetchVideoDetails(directVideoId);
@@ -165,16 +176,17 @@ public class YouTubeService {
     }
 
     private List<SongSearchResult> searchViaYouTubeApi(String query) throws Exception {
-        String searchUrl = UriComponentsBuilder.fromHttpUrl("https://www.googleapis.com/youtube/v3/search")
+        URI searchUri = UriComponentsBuilder.fromHttpUrl("https://www.googleapis.com/youtube/v3/search")
                 .queryParam("part", "snippet")
                 .queryParam("maxResults", maxResults)
                 .queryParam("q", query)
                 .queryParam("type", "video")
                 .queryParam("videoEmbeddable", "true")
                 .queryParam("key", apiKey)
-                .toUriString();
+                .build()
+                .toUri();
 
-        ResponseEntity<String> response = restTemplate.getForEntity(searchUrl, String.class);
+        ResponseEntity<String> response = restTemplate.getForEntity(searchUri, String.class);
         JsonNode root = objectMapper.readTree(response.getBody());
         JsonNode items = root.path("items");
 
@@ -186,8 +198,8 @@ public class YouTubeService {
             if (videoId == null || videoId.isBlank()) continue;
 
             JsonNode snippet = item.path("snippet");
-            String title = snippet.path("title").asText();
-            String channelTitle = snippet.path("channelTitle").asText();
+            String title = HtmlUtils.htmlUnescape(snippet.path("title").asText());
+            String channelTitle = HtmlUtils.htmlUnescape(snippet.path("channelTitle").asText());
             String thumbnailUrl = snippet.path("thumbnails").path("medium").path("url").asText();
             if (thumbnailUrl.isBlank()) {
                 thumbnailUrl = snippet.path("thumbnails").path("default").path("url").asText();
@@ -217,13 +229,14 @@ public class YouTubeService {
 
     private void enrichVideoDetails(List<String> videoIds, Map<String, SongSearchResult.SongSearchResultBuilder> resultsMap) {
         try {
-            String videosUrl = UriComponentsBuilder.fromHttpUrl("https://www.googleapis.com/youtube/v3/videos")
+            URI videosUri = UriComponentsBuilder.fromHttpUrl("https://www.googleapis.com/youtube/v3/videos")
                     .queryParam("part", "contentDetails,status")
                     .queryParam("id", String.join(",", videoIds))
                     .queryParam("key", apiKey)
-                    .toUriString();
+                    .build()
+                    .toUri();
 
-            ResponseEntity<String> response = restTemplate.getForEntity(videosUrl, String.class);
+            ResponseEntity<String> response = restTemplate.getForEntity(videosUri, String.class);
             JsonNode root = objectMapper.readTree(response.getBody());
             JsonNode items = root.path("items");
 
@@ -260,13 +273,14 @@ public class YouTubeService {
         }
 
         try {
-            String videosUrl = UriComponentsBuilder.fromHttpUrl("https://www.googleapis.com/youtube/v3/videos")
+            URI videosUri = UriComponentsBuilder.fromHttpUrl("https://www.googleapis.com/youtube/v3/videos")
                     .queryParam("part", "snippet,contentDetails,status")
                     .queryParam("id", videoId)
                     .queryParam("key", apiKey)
-                    .toUriString();
+                    .build()
+                    .toUri();
 
-            ResponseEntity<String> response = restTemplate.getForEntity(videosUrl, String.class);
+            ResponseEntity<String> response = restTemplate.getForEntity(videosUri, String.class);
             JsonNode root = objectMapper.readTree(response.getBody());
             JsonNode items = root.path("items");
 
@@ -276,8 +290,8 @@ public class YouTubeService {
 
             JsonNode item = items.get(0);
             JsonNode snippet = item.path("snippet");
-            String title = snippet.path("title").asText();
-            String channelTitle = snippet.path("channelTitle").asText();
+            String title = HtmlUtils.htmlUnescape(snippet.path("title").asText());
+            String channelTitle = HtmlUtils.htmlUnescape(snippet.path("channelTitle").asText());
             String thumb = snippet.path("thumbnails").path("medium").path("url").asText();
             String durationIso = item.path("contentDetails").path("duration").asText();
             boolean embeddable = item.path("status").path("embeddable").asBoolean(true);
@@ -331,18 +345,129 @@ public class YouTubeService {
         }
     }
 
+    public String extractSearchQuery(String input) {
+        if (input == null || input.isBlank()) return null;
+        input = input.trim();
+        if (!input.contains("youtube.com") && !input.contains("youtu.be")) {
+            return null;
+        }
+        Pattern pattern = Pattern.compile("[?&](?:search_query|q)=([^&#]+)", Pattern.CASE_INSENSITIVE);
+        Matcher matcher = pattern.matcher(input);
+        if (matcher.find()) {
+            try {
+                String encoded = matcher.group(1);
+                return URLDecoder.decode(encoded, StandardCharsets.UTF_8).trim();
+            } catch (Exception e) {
+                return matcher.group(1).replace("+", " ").trim();
+            }
+        }
+        return null;
+    }
+
     public String extractVideoId(String input) {
         if (input == null || input.isBlank()) return null;
         input = input.trim();
+        // If it's a search URL, it's not a direct video ID
+        if (extractSearchQuery(input) != null) {
+            return null;
+        }
         if (input.matches("^[a-zA-Z0-9_-]{11}$")) {
             return input;
         }
-        Pattern pattern = Pattern.compile("(?:v=|/|embed/|youtu\\.be/)([a-zA-Z0-9_-]{11})");
+        Pattern pattern = Pattern.compile("(?:v=|embed/|youtu\\.be/|v/|shorts/)([a-zA-Z0-9_-]{11})");
         Matcher matcher = pattern.matcher(input);
         if (matcher.find()) {
             return matcher.group(1);
         }
         return null;
+    }
+
+    public ResolveSongItemDto resolveSong(String input, boolean autoSelectFirst) {
+        if (input == null || input.isBlank()) {
+            return null;
+        }
+        String trimmed = input.trim();
+        String id = UUID.randomUUID().toString();
+
+        // 1. Check for direct video ID or link
+        String videoId = extractVideoId(trimmed);
+        if (videoId != null) {
+            SongSearchResult direct = fetchVideoDetails(videoId);
+            if (direct != null) {
+                return ResolveSongItemDto.builder()
+                        .id(id)
+                        .originalInput(trimmed)
+                        .parsedQuery(direct.getTitle())
+                        .inputType("DIRECT_VIDEO")
+                        .status("AUTO_RESOLVED")
+                        .confidence("HIGH")
+                        .selectedMatch(direct)
+                        .candidates(List.of(direct))
+                        .notes("Direct YouTube video match")
+                        .build();
+            }
+        }
+
+        // 2. Check for search URL or song title / search query
+        String extractedQuery = extractSearchQuery(trimmed);
+        String inputType = extractedQuery != null ? "SEARCH_URL" : "QUERY";
+        String queryToSearch = extractedQuery != null ? extractedQuery : trimmed;
+
+        List<SongSearchResult> results = search(queryToSearch);
+        if (results == null || results.isEmpty()) {
+            return ResolveSongItemDto.builder()
+                    .id(id)
+                    .originalInput(trimmed)
+                    .parsedQuery(queryToSearch)
+                    .inputType(inputType)
+                    .status("NO_MATCH")
+                    .confidence("LOW")
+                    .selectedMatch(null)
+                    .candidates(Collections.emptyList())
+                    .notes("No matching tracks found on YouTube")
+                    .build();
+        }
+
+        List<SongSearchResult> candidates = results.stream().limit(6).collect(Collectors.toList());
+        SongSearchResult topMatch = candidates.get(0);
+
+        String queryLower = queryToSearch.toLowerCase();
+        String topTitleLower = topMatch.getTitle().toLowerCase();
+        boolean strongMatch = topTitleLower.contains(queryLower)
+                || (queryLower.contains("official") && topTitleLower.contains("official"))
+                || candidates.size() == 1;
+
+        String confidence = strongMatch ? "HIGH" : "MEDIUM";
+        String status = autoSelectFirst ? "AUTO_RESOLVED" : (confidence.equals("HIGH") ? "AUTO_RESOLVED" : "NEEDS_SELECTION");
+
+        return ResolveSongItemDto.builder()
+                .id(id)
+                .originalInput(trimmed)
+                .parsedQuery(queryToSearch)
+                .inputType(inputType)
+                .status(status)
+                .confidence(confidence)
+                .selectedMatch(topMatch)
+                .candidates(candidates)
+                .notes(status.equals("AUTO_RESOLVED") ? "Top match auto-selected" : "Review and select preferred result")
+                .build();
+    }
+
+    public List<ResolveSongItemDto> resolveBatch(List<String> inputs, boolean autoSelectFirst) {
+        if (inputs == null || inputs.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ResolveSongItemDto> resolved = new ArrayList<>();
+        for (String line : inputs) {
+            if (line == null || line.isBlank()) continue;
+            String trimmed = line.trim();
+            if (trimmed.startsWith("#") || trimmed.startsWith("//")) continue;
+            ResolveSongItemDto item = resolveSong(trimmed, autoSelectFirst);
+            if (item != null) {
+                resolved.add(item);
+            }
+        }
+        return resolved;
     }
 
     public String extractPlaylistId(String input) {
@@ -371,14 +496,15 @@ public class YouTubeService {
         }
 
         try {
-            String url = UriComponentsBuilder.fromHttpUrl("https://www.googleapis.com/youtube/v3/playlistItems")
+            URI playlistUri = UriComponentsBuilder.fromHttpUrl("https://www.googleapis.com/youtube/v3/playlistItems")
                     .queryParam("part", "snippet,contentDetails")
                     .queryParam("playlistId", playlistId)
                     .queryParam("maxResults", 50)
                     .queryParam("key", apiKey)
-                    .toUriString();
+                    .build()
+                    .toUri();
 
-            ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+            ResponseEntity<String> response = restTemplate.getForEntity(playlistUri, String.class);
             JsonNode root = objectMapper.readTree(response.getBody());
             JsonNode items = root.path("items");
 
