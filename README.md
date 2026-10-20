@@ -74,6 +74,28 @@ Strictly compliant with YouTube developer policies: official YouTube IFrame Play
 
 ---
 
+### 💾 Persistent Storage & Backups
+
+OwnDJ is configured with persistent Docker volumes so your events, playlists, and uploaded photos are safe:
+- **PostgreSQL Database**: Stored in named volume `owndj_pgdata`. Data persists automatically across `docker-compose down` and `docker-compose up`.
+- **Custom Visual Uploads**: Stored in named volume `owndj_uploads_data` (`/app/uploads`), preserving uploaded photos across container rebuilds.
+
+#### One-Click Database Backup:
+```bash
+./scripts/backup-db.sh
+```
+Dumps the complete PostgreSQL database to `backups/owndj_backup_<timestamp>.sql` and updates `backups/owndj_latest.sql`.
+
+#### One-Click Database Restore:
+```bash
+./scripts/restore-db.sh                        # Restores latest backup
+./scripts/restore-db.sh backups/my_backup.sql  # Restores specific backup file
+```
+
+> **Note**: Avoid using `docker-compose down -v` unless you intentionally want to wipe all volumes and start fresh. Running standard `docker-compose down` preserves all data.
+
+---
+
 ### Method B: Run Native Services Locally
 
 #### 1. Start Backend (Spring Boot)

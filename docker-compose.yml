@@ -35,6 +35,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     ports:
       - "8080:8080"
+    volumes:
+      - uploads_data:/app/uploads
 
   frontend:
     build:
@@ -58,3 +60,6 @@ services:
 
 volumes:
   pgdata:
+    name: owndj_pgdata
+  uploads_data:
+    name: owndj_uploads_data
